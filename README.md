@@ -144,11 +144,11 @@ If two or more types (excluding `str`) are valid candidates, a warning will be i
 
 ### Supported types
 
-`int`, `float`, `bool`, `str`, `None`, `Path`, `list`, `tuple`, `dict`, `Enum`, `dataclass`, `Union`, `Literal`
+`int`, `float`, `bool`, `str`, `None`, `Path`, `list`, `tuple`, `dict`, `Enum`, `dataclass`, `Union`, `Literal`, `TypedDict`
 
 ## Limitations
 
-1. Lists and tuples of dataclasses are not supported.
+1. Lists and tuples of dataclasses are not supported. There is currently no way to input a list of dataclasses in CLI arguments.
 
 2. Default values defined in nested dataclass default constructor will be overwritten by the CLI arguments. For example:
 

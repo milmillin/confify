@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import math
 from types import NoneType
 from pathlib import Path
-from typing import List, Union, Optional, Tuple, Literal
+from typing import List, Union, Optional, Tuple, Literal, TypedDict, NotRequired
 from enum import Enum
 
 
@@ -208,8 +208,6 @@ def test_none_from_none():
 
 
 def test_none_from_str():
-    assert _parse("None", NoneType) == None
-    assert _parse("none", NoneType) == None
     assert _parse("null", NoneType) == None
 
 
@@ -391,7 +389,7 @@ def test_typed_tuple_from_str():
         with pytest.raises(ConfifyError):
             _parse("[1, 2, 3, (1, 2, 3)]", t)
         with pytest.raises(ConfifyError):
-            _parse("[1, a, False, None]", t)
+            _parse("[1, a, False, null]", t)
 
     for t in [tuple[int], Tuple[int]]:
         with pytest.raises(ConfifyError):
@@ -420,7 +418,7 @@ def test_typed_tuple_from_str():
         with pytest.raises(ConfifyError):
             _parse("[1, a, False, None]", t)
 
-    assert _parse("[1, a, False, None]", tuple[int, str, bool, None]) == (
+    assert _parse("[1, a, False, null]", tuple[int, str, bool, None]) == (
         1,
         "a",
         False,
@@ -590,9 +588,9 @@ def test_literal():
     _assert_bool_equals(_parse("1", Literal[True, "True"]), True)
     _assert_bool_equals(_parse(1, Literal[True, "True"]), True)
 
-    assert _parse(None, Literal[None, "None"]) == None
-    assert _parse("None", Literal[None, "None"]) == None
-    assert _parse("'None'", Literal[None, "None"]) == "None"
+    assert _parse(None, Literal[None, "null"]) == None
+    assert _parse("null", Literal[None, "null"]) == None
+    assert _parse("'null'", Literal[None, "null"]) == "null"
 
     assert _parse({"a": 1, "b": 2}, Literal["123", 123, {"a": 1, "b": 2}]) == {
         "a": 1,
@@ -692,6 +690,45 @@ def test_dataclass():
     # extra field
     with pytest.raises(ConfifyError):
         _parse({"a": "a", "b": "1", "c": "True", "d": "6", "e": "7"}, A)
-    
+
     # nested dataclass
     assert _parse({"x1": 1, "x2": "2", "x3": A("a", 1, True)}, B) == B(1, "2", A("a", 1, True))
+
+
+################################################################################
+# Test TypedDict
+################################################################################
+
+
+class C(TypedDict):
+    a: str
+    b: int
+    c: bool
+    d: NotRequired[int]
+
+
+class D(TypedDict):
+    x1: int
+    x2: str
+    x3: C
+
+
+def test_typeddict():
+    assert _parse(C({"a": "a", "b": 1, "c": True}), C) == C({"a": "a", "b": 1, "c": True})
+    assert _parse({"a": "a", "b": 1, "c": True}, C) == C({"a": "a", "b": 1, "c": True})
+    assert _parse({"a": "a", "b": "1", "c": "True"}, C) == C({"a": "a", "b": 1, "c": True})
+    assert _parse({"a": "a", "b": "1", "c": "True", "d": "6"}, C) == C({"a": "a", "b": 1, "c": True, "d": 6})
+    # incorrect type
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1", "c": 33}, C)
+    # missing field
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1"}, C)
+    # extra field
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1", "c": "True", "d": "6", "e": "7"}, C)
+
+    # nested dataclass
+    assert _parse({"x1": 1, "x2": "2", "x3": C({"a": "a", "b": 1, "c": True})}, D) == D(
+        {"x1": 1, "x2": "2", "x3": C({"a": "a", "b": 1, "c": True})}
+    )

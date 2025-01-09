@@ -13,6 +13,10 @@ from typing import (
     get_origin,
     Literal,
     get_args,
+    is_typeddict,
+    Required,
+    NotRequired,
+    Annotated
 )
 from enum import Enum
 from types import GenericAlias
@@ -189,6 +193,8 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
     - cost
     """
     try:
+        if get_origin(cls) is Annotated:
+            cls = get_args(cls)[0]
         if cls == int:
             if isinstance(d, int):
                 return _ParseResult(d)
@@ -363,6 +369,26 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                 return _ParseResult(cls(**args), warnings=warns)
             elif isinstance(d, cls):
                 return _ParseResult(d)
+        elif is_typeddict(cls):
+            if isinstance(d, dict):
+                args = {}
+                warns: list[_ParseWarningEntry] = []
+                required_fields: set[str] = set(cls.__required_keys__)  # type: ignore
+                all_fields: set[str] = set(cls.__annotations__.keys())
+                for field, typ in cls.__annotations__.items():
+                    if field not in d:
+                        if field in required_fields:
+                            raise ValueError(f"Missing field: {field}")
+                    else:
+                        if get_origin(typ) is NotRequired or get_origin(typ) is Required:
+                            typ = get_args(typ)[0]
+                        results = _parse_impl(d[field], typ, f"{prefix}.{field}")
+                        warns.extend(results.warnings)
+                        args[field] = results.value
+                for k in d.keys():
+                    if k not in all_fields:
+                        raise ValueError(f"Got extra field: {k}")
+                return _ParseResult(cls(**args), warnings=warns)
         else:
             raise ConfifyError(f"Unsupported type [{cls}] at [{prefix}].")
     except (ValueError, KeyError) as e:
