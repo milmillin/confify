@@ -225,7 +225,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                 return _ParseResult(None)
             elif isinstance(d, str):
                 d = d.strip().lower()
-                if d in ["none", "null"]:
+                if d in ["null"]:
                     return _ParseResult(None)
         elif cls == Path:
             if isinstance(d, Path):
@@ -383,6 +383,11 @@ def parse(d: Any, cls: type[_T]) -> _T:
 # alias to avoid type errors in tests
 def _parse(d: Any, cls: _TypeFormT) -> Any:
     return parse(d, cls)
+
+
+def parse_yaml(file: Union[str, Path], cls: type[_T]) -> _T:
+    value = yaml.full_load(Path(file).open("r", encoding="utf-8"))
+    return parse(value, cls)
 
 
 def _classname(obj: Any) -> str:

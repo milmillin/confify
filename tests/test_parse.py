@@ -643,7 +643,7 @@ def test_enum():
         a = 1
         b = 2
         c = 3
-    
+
     assert _parse("a", A) == A.a
     assert _parse("b", A) == A.b
     assert _parse("c", A) == A.c
@@ -656,4 +656,42 @@ def test_enum():
     assert _parse(A.a, A) == A.a
     assert _parse(A.b, A) == A.b
     assert _parse(A.c, A) == A.c
+
+
+###############################################################################
+# Test Dataclasses
+###############################################################################
+
+
+@dataclass
+class A:
+    a: str
+    b: int
+    c: bool
+    d: int = 5
+
+
+@dataclass
+class B:
+    x1: int
+    x2: str
+    x3: A
+
+
+def test_dataclass():
+    assert _parse(A("a", 1, True), A) == A("a", 1, True)
+    assert _parse({"a": "a", "b": 1, "c": True}, A) == A("a", 1, True)
+    assert _parse({"a": "a", "b": "1", "c": "True"}, A) == A("a", 1, True)
+    assert _parse({"a": "a", "b": "1", "c": "True", "d": "6"}, A) == A("a", 1, True, 6)
+    # incorrect type
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1", "c": 33}, A)
+    # missing field
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1"}, A)
+    # extra field
+    with pytest.raises(ConfifyError):
+        _parse({"a": "a", "b": "1", "c": "True", "d": "6", "e": "7"}, A)
     
+    # nested dataclass
+    assert _parse({"x1": 1, "x2": "2", "x3": A("a", 1, True)}, B) == B(1, "2", A("a", 1, True))
