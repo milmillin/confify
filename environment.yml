@@ -1,0 +1,9 @@
+name: confify-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip>=20.3
+  - pip:
+    - pytest
+    - -e .
