@@ -1,6 +1,10 @@
 import pytest
 
-from confify.base import _str_to_sequence
+from confify.base import _UnresolvedString
+
+
+def _str_to_sequence(s: str) -> list[str]:
+    return [v.value for v in _UnresolvedString(s).resolve_as_sequence()]
 
 
 def test():

@@ -16,7 +16,7 @@ from typing import (
     is_typeddict,
     Required,
     NotRequired,
-    Annotated
+    Annotated,
 )
 from enum import Enum
 from types import GenericAlias
@@ -28,6 +28,8 @@ from importlib import import_module
 from functools import partialmethod
 import warnings
 import ast
+
+from .yaml import ConfifyDumper, ConfifyLoader
 
 _T = TypeVar("_T")
 
@@ -104,59 +106,59 @@ def _import_string(dotted_path: str):
         raise ImportError('Module "%s" does not define a "%s" attribute/class' % (module_path, class_name)) from err
 
 
-# TODO: test
-def _str_to_sequence(s: str) -> list[str]:
-    s = s.strip()
-    if not ((s[0] == "[" and s[-1] == "]") or (s[0] == "(" and s[-1] == ")")):
-        raise ValueError(f"Invalid sequence: {s}")
-    s = s[1:-1]
-    stk: list[str] = []
-    res: list[str] = []
-    last: str = ""
-    quote: Optional[str] = None
-    i = 0
-    while i < len(s):
-        c = s[i]
-        if quote is not None:
-            if c == "\\":
-                if s[i + 1] in ["\\", "'", '"']:
-                    last += c + s[i + 1]
-                    i += 1
+class _UnresolvedString:
+    def __init__(self, value: str):
+        self.value = value
+
+    def resolve_as_sequence(self) -> list["_UnresolvedString"]:
+        s = self.value
+        s = s.strip()
+        if not ((s[0] == "[" and s[-1] == "]") or (s[0] == "(" and s[-1] == ")")):
+            raise ValueError(f"Invalid sequence: {s}")
+        s = s[1:-1]
+        stk: list[str] = []
+        res: list[str] = []
+        last: str = ""
+        quote: Optional[str] = None
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if quote is not None:
+                if c == "\\":
+                    if s[i + 1] in ["\\", "'", '"']:
+                        last += c + s[i + 1]
+                        i += 1
+                    else:
+                        last += c
+                elif c == quote:
+                    last += c
+                    quote = None
                 else:
                     last += c
-            elif c == quote:
-                last += c
-                quote = None
             else:
-                last += c
-        else:
-            if c == "," and len(stk) == 0:
-                res.append(last.strip())
-                last = ""
-            elif c == '"' or c == "'":
-                quote = c
-                last += c
-            else:
-                if c == "[" or c == "(":
-                    stk.append(c)
-                elif c == "]" or c == ")":
-                    if len(stk) == 0:
-                        raise ValueError(f"Invalid sequence: {s}")
-                    if (c == "]" and stk[-1] != "[") or (c == ")" and stk[-1] != "("):
-                        raise ValueError(f"Invalid sequence: {s}")
-                    stk.pop()
-                last += c
-        i += 1
-    if len(stk) > 0 or quote is not None:
-        raise ValueError(f"Invalid sequence: {s}")
-    res.append(last.strip())
-    if len(res) == 1 and res[0] == "":
-        return []
-    return res
-
-
-def _unescape_quotes(s: str) -> str:
-    return s.replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
+                if c == "," and len(stk) == 0:
+                    res.append(last.strip())
+                    last = ""
+                elif c == '"' or c == "'":
+                    quote = c
+                    last += c
+                else:
+                    if c == "[" or c == "(":
+                        stk.append(c)
+                    elif c == "]" or c == ")":
+                        if len(stk) == 0:
+                            raise ValueError(f"Invalid sequence: {s}")
+                        if (c == "]" and stk[-1] != "[") or (c == ")" and stk[-1] != "("):
+                            raise ValueError(f"Invalid sequence: {s}")
+                        stk.pop()
+                    last += c
+            i += 1
+        if len(stk) > 0 or quote is not None:
+            raise ValueError(f"Invalid sequence: {s}")
+        res.append(last.strip())
+        if len(res) == 1 and res[0] == "":
+            return []
+        return [_UnresolvedString(r) for r in res]
 
 
 _TYPE_RANK = {
@@ -196,59 +198,59 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
         if get_origin(cls) is Annotated:
             cls = get_args(cls)[0]
         if cls == int:
-            if isinstance(d, int):
+            if isinstance(d, int) and not isinstance(d, bool):
                 return _ParseResult(d)
-            elif isinstance(d, str):
-                return _ParseResult(int(d))
+            elif isinstance(d, _UnresolvedString):
+                return _ParseResult(int(d.value))
         elif cls == float:
             if isinstance(d, float):
                 return _ParseResult(d)
-            elif isinstance(d, (int, str)):
+            elif isinstance(d, int):
                 return _ParseResult(float(d))
+            elif isinstance(d, _UnresolvedString):
+                return _ParseResult(float(d.value))
         elif cls == bool:
             if isinstance(d, bool):
                 return _ParseResult(d)
-            elif isinstance(d, str):
-                d = d.strip().lower()
-                if d in ["true", "1"]:
+            elif isinstance(d, _UnresolvedString):
+                d = d.value.strip().lower()
+                if d in ["true", "on", "yes"]:
                     return _ParseResult(True)
-                elif d in ["false", "0"]:
-                    return _ParseResult(False)
-            elif isinstance(d, int):
-                if d == 1:
-                    return _ParseResult(True)
-                elif d == 0:
+                elif d in ["false", "off", "no"]:
                     return _ParseResult(False)
         elif cls == str:
-            if isinstance(d, str):
+            if isinstance(d, _UnresolvedString):
+                d = d.value
                 if (d.startswith('"') and d.endswith('"')) or (d.startswith("'") and d.endswith("'")):
                     return _ParseResult(ast.literal_eval(d))
                 return _ParseResult(d)
-            else:
-                return _ParseResult(str(d))
+            elif isinstance(d, str):
+                return _ParseResult(d)
         elif cls == None or cls == type(None):
             if d is None:
                 return _ParseResult(None)
-            elif isinstance(d, str):
-                d = d.strip().lower()
-                if d in ["null"]:
+            elif isinstance(d, _UnresolvedString):
+                d = d.value.strip().lower()
+                if d in ["null", "~", "none"]:
                     return _ParseResult(None)
         elif cls == Path:
             if isinstance(d, Path):
                 return _ParseResult(d)
             elif isinstance(d, str):
                 return _ParseResult(Path(d))
+            elif isinstance(d, _UnresolvedString):
+                return _ParseResult(Path(d.value))
         elif cls == list or cls == tuple or get_origin(cls) == list or get_origin(cls) == tuple:
             args = get_args(cls)
             elems = None
-            if isinstance(d, str):
-                elems = _str_to_sequence(d)
+            if isinstance(d, _UnresolvedString):
+                elems = d.resolve_as_sequence()
             elif isinstance(d, (list, tuple)):
                 elems = d
             if elems is not None:
                 if cls == list or get_origin(cls) == list:
                     if len(args) == 0:
-                        return _ParseResult(list(elems))
+                        return _ParseResult([v.value if isinstance(v, _UnresolvedString) else v for v in elems])
                     elif len(args) == 1:
                         results = [_parse_impl(d, args[0], f"{prefix}[{i}]") for i, d in enumerate(elems)]
                         return _ParseResult(
@@ -259,7 +261,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                     # Compatibility hack to distinguish between unparametrized and empty tuple
                     # (tuple[()]), necessary due to https://github.com/python/cpython/issues/91137
                     if len(args) == 0 and (cls is tuple or cls is Tuple):
-                        return _ParseResult(tuple(elems))
+                        return _ParseResult(tuple(v.value if isinstance(v, _UnresolvedString) else v for v in elems))
                     elif len(args) == 2 and args[1] == Ellipsis:
                         results = [_parse_impl(d, args[0], f"{prefix}[{i}]") for i, d in enumerate(elems)]
                         return _ParseResult(
@@ -342,19 +344,30 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
             if isinstance(d, str):
                 d = d.strip()
                 return _ParseResult(cls[d])
+            elif isinstance(d, _UnresolvedString):
+                d = d.value.strip()
+                return _ParseResult(cls[d])
             elif isinstance(d, cls):
                 return _ParseResult(d)
         elif isclass(cls) and is_dataclass(cls):
             if isinstance(d, dict):
+                args = {}
+                warns: list[_ParseWarningEntry] = []
                 if "$type" in d:
                     new_cls = _import_string(d["$type"])
                     d = dict(d)
                     del d["$type"]
                     if not issubclass(new_cls, cls):  # type: ignore
-                        raise ValueError(f"Type {new_cls} is not a is not assignable to {cls}")
-                    cls = new_cls
-                args = {}
-                warns: list[_ParseWarningEntry] = []
+                        warns.append(
+                            _ParseWarningEntry(
+                                loc=f"{prefix}",
+                                type=cls.__name__,
+                                value=d,
+                                message=f"Type [{new_cls}] is not a subtype of [{cls}] at [{prefix}]",
+                            )
+                        )
+                    else:
+                        cls = new_cls
                 for f in fields(cls):
                     if f.name not in d:
                         if f.default == MISSING and f.default_factory == MISSING:
@@ -412,7 +425,7 @@ def _parse(d: Any, cls: _TypeFormT) -> Any:
 
 
 def parse_yaml(file: Union[str, Path], cls: type[_T]) -> _T:
-    value = yaml.full_load(Path(file).open("r", encoding="utf-8"))
+    value = yaml.load(Path(file).open("r", encoding="utf-8"), Loader=ConfifyLoader)
     return parse(value, cls)
 
 
@@ -428,7 +441,7 @@ def _classname(obj: Any) -> str:
     return name
 
 
-def config_dump_python(config: Any, ignore: list[str] = []) -> Any:
+def _config_dump_impl(config: Any, ignore: list[str] = []) -> Any:
     field_ignore: dict[str, list[str]] = {}
     ignored_fields: set[str] = set()
     for f in ignore:
@@ -442,25 +455,25 @@ def config_dump_python(config: Any, ignore: list[str] = []) -> Any:
             field_ignore[field].append(subfield)
     if is_dataclass(config):
         res = {
-            f.name: config_dump_python(getattr(config, f.name), ignore=field_ignore.get(f.name, []))
+            f.name: _config_dump_impl(getattr(config, f.name), ignore=field_ignore.get(f.name, []))
             for f in fields(config)
             if f.name not in ignored_fields
         }
         res["$type"] = _classname(config)
         return res
     elif isinstance(config, dict):
-        return {k: config_dump_python(v, ignore=field_ignore.get(k, [])) for k, v in config.items()}
+        return {k: _config_dump_impl(v, ignore=field_ignore.get(k, [])) for k, v in config.items()}
     elif isinstance(config, list):
-        return [config_dump_python(v) for v in config]
+        return [_config_dump_impl(v) for v in config]
     elif isinstance(config, tuple):
-        return tuple(config_dump_python(v) for v in config)
+        return tuple(_config_dump_impl(v) for v in config)
     else:
         return config
 
 
 def config_dump_yaml(file: Union[str, Path], config: Any, ignore: list[str] = []) -> Any:
-    data = config_dump_python(config, ignore=ignore)
-    yaml.dump(data, Path(file).open("w", encoding="utf-8"))
+    data = _config_dump_impl(config, ignore=ignore)
+    yaml.dump(data, Path(file).open("w", encoding="utf-8"), Dumper=ConfifyDumper)
     return data
 
 
@@ -475,6 +488,7 @@ def read_config_from_argv(Config: Type[_T], argv: list[str]) -> _T:
             value = yaml.full_load(Path(value).open("r", encoding="utf-8"))
         elif key.startswith("--"):
             key = key[2:]
+            value = _UnresolvedString(value)
         else:
             raise ValueError(f"Invalid argument: {key}. Must start with -- or ---")
         _insert_dict(args, key.split(".") if key else [], value)
