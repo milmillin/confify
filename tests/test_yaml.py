@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Union, Literal
 from enum import Enum
 
-from confify.base import config_dump_yaml, parse_yaml
+from confify.parser import config_dump_yaml, parse_yaml
 
 
 class Animal(Enum):
@@ -40,6 +40,7 @@ class A:
     x22: Union[int, str, bool, None, Animal]
     x23: Union[int, str, bool, None, Animal]
     x24: Union[int, str, bool, None, Animal]
+    x25: str
 
 
 @dataclass
@@ -59,8 +60,7 @@ def assert_identity(data: Any):
 
 
 def test_yaml():
-    assert_identity(
-        A(
+    a = A(
             1,
             1.1,
             True,
@@ -85,8 +85,10 @@ def test_yaml():
             "False",
             "1",
             "~",
+            "hello\nworld"
         )
-    )
+    assert_identity(a)
+    assert_identity(B(1, "a", a))
 
 
 @dataclass

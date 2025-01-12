@@ -4,7 +4,7 @@ import yaml
 from pathlib import Path
 
 
-class ConfifyDumper(yaml.Dumper):
+class ConfifyDumper(yaml.SafeDumper):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -29,14 +29,3 @@ ConfifyDumper.add_representer(tuple, ConfifyDumper.represent_tuple)
 ConfifyDumper.add_representer(str, ConfifyDumper.represent_str)
 ConfifyDumper.add_multi_representer(Path, ConfifyDumper.represent_path)
 ConfifyDumper.add_representer(list, ConfifyDumper.represent_list)
-
-
-class ConfifyLoader(yaml.Loader):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def construct_enum(self, node):
-        return self.construct_scalar(node)
-
-    def construct_path(self, node):
-        return Path(self.construct_scalar(node))

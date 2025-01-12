@@ -1,6 +1,6 @@
 import pytest
 
-from confify.base import _UnresolvedString
+from confify.parser import _UnresolvedString
 
 
 def _str_to_sequence(s: str) -> list[str]:

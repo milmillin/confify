@@ -45,5 +45,6 @@ pgadmin_data/
 
 
 scratch.ipynb
+arg_test.py
 
 .pytest_cache/

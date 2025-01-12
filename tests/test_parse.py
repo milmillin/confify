@@ -7,7 +7,7 @@ from typing import List, Union, Optional, Tuple, Literal, TypedDict, NotRequired
 from enum import Enum
 
 
-from confify.base import _parse, ConfifyError, ConfifyWarning, _UnresolvedString
+from confify.parser import _parse, ConfifyParseError, _UnresolvedString
 
 
 def _assert_bool_equals(x, y: bool):
@@ -44,21 +44,21 @@ def test_int_from_str():
 
 
 def test_int_fail():
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("123.456", int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("12abc", int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("-3e5", int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(None, int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(True, int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(False, int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'123'", int)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'-123'", int)
 
 
@@ -106,19 +106,19 @@ def test_float_from_str():
 
 
 def test_float_fail():
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("123.456.789", float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("123abc", float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("-3e5f", float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(None, float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'123.456'", float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'123'", float)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'-3e5'", float)
 
 
@@ -154,27 +154,27 @@ def test_bool_from_str():
 
 
 def test_bool_fail():
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Truee", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Truee", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Tru", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Fa", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("00", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("01", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("10", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'True'", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("'False'", bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(123, bool)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(-123, bool)
 
 
@@ -191,13 +191,13 @@ def test_str_from_str():
     assert _parseu("  abc", str) == "  abc"
     assert _parseu("  abc  ", str) == "  abc  "
     assert _parseu('"  abc  "', str) == "  abc  "
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         assert _parse(123, str) == "123"
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         assert _parse(123.456, str) == "123.456"
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         assert _parse(True, str) == "True"
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         assert _parse(False, str) == "False"
 
 
@@ -239,24 +239,24 @@ def test_none_from_str():
     assert _parseu("None", NoneType) == None
     assert _parseu("none", NoneType) == None
     # regular str
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse("null", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse("~", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse("none", NoneType)
 
 
 def test_none_fail():
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Nonee", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("False", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("False", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Nul", NoneType)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("Fa", NoneType)
 
 
@@ -297,15 +297,15 @@ def test_path_from_str():
 
 
 def test_path_fail():
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(123, Path)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(123.456, Path)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(True, Path)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(False, Path)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(None, Path)
 
 
@@ -367,9 +367,9 @@ def test_typed_list_from_list():
         assert _parse([], t) == []
         assert _parse([1], t) == [1]
         assert _parse([1, 2, 3], t) == [1, 2, 3]
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, 3, (1, 2, 3)], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, "a", False, None], t)
 
 
@@ -379,9 +379,9 @@ def test_typed_list_from_str():
         assert _parseu("[1]", t) == [1]
         assert _parseu("[1, 2, 3]", t) == [1, 2, 3]
         assert _parseu("[ 1, 2, 3 ]", t) == [1, 2, 3]
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, 3, (1, 2, 3)]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, a, False, None]", t)
 
 
@@ -390,35 +390,35 @@ def test_typed_tuple_from_list():
         assert _parse([], t) == ()
         assert _parse([1], t) == (1,)
         assert _parse([1, 2, 3], t) == (1, 2, 3)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, 3, (1, 2, 3)], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, "a", False, None], t)
 
     for t in [tuple[int], Tuple[int]]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([], t)
         assert _parse([1], t) == (1,)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, 3], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([" 1", "2", "3 "], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, 3, (1, 2, 3)], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, "a", False, None], t)
 
     for t in [tuple[int, int, int], Tuple[int, int, int]]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1], t)
         assert _parse([1, 2, 3], t) == (1, 2, 3)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, 3, (1, 2, 3)], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2, (1, 2, 3)], t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, "a", False, None], t)
 
 
@@ -428,36 +428,36 @@ def test_typed_tuple_from_str():
         assert _parseu("[1]", t) == (1,)
         assert _parseu("[1, 2, 3]", t) == (1, 2, 3)
         assert _parseu("[ 1, 2, 3 ]", t) == (1, 2, 3)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, 3, (1, 2, 3)]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, a, False, null]", t)
 
     for t in [tuple[int], Tuple[int]]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[]", t)
         assert _parseu("[1]", t) == (1,)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, 3]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[ 1, 2, 3 ]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, 3, (1, 2, 3)]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, a, False, None]", t)
 
     for t in [tuple[int, int, int], Tuple[int, int, int]]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1]", t)
         assert _parseu("[1, 2, 3]", t) == (1, 2, 3)
         assert _parseu("[ 1, 2, 3 ]", t) == (1, 2, 3)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, 3, (1, 2, 3)]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, 2, (1, 2, 3)]", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("[1, a, False, None]", t)
 
     assert _parseu("[1, a, False, null]", tuple[int, str, bool, None]) == (
@@ -472,7 +472,7 @@ def test_empty_tuple():
     for t in [tuple[()], Tuple[()]]:
         assert _parse([], t) == ()
 
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([1, 2], t)
 
     for t in [tuple, Tuple]:
@@ -485,13 +485,13 @@ def test_nested_tuple():
         tuple[tuple[int, int], tuple[int, int]],
         Tuple[Tuple[int, int], Tuple[int, int]],
     ]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([], t)
         assert _parse([(1, 2), (3, 4)], t) == ((1, 2), (3, 4))
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([(1, 2), (3, 4), (5, 6)], t)
         assert _parseu("[ (1, 2),  (3, 4) ]", t) == ((1, 2), (3, 4))
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parse([(1, 2), (3, 4), (5, 6), (7, 8)], t)
         assert _parseu("[ (1, 2),  (3, 4) ]", t) == ((1, 2), (3, 4))
     assert _parseu("[(1, 2),[2,4],'(3,5']", tuple[tuple[int, int], list[int], str]) == (
@@ -519,7 +519,7 @@ def test_nested_tuple():
         [2, 4],
         "asdf",
     )
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parseu("['(1, 2)',[2,4], asdf]", tuple[tuple[int, int], list[int], str])
 
 
@@ -535,21 +535,21 @@ def test_list_tuple_fail():
         tuple[int, ...],
         tuple[int, int, int],
     ]:
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("123", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("123.456", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("True", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("False", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("None", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("Nonee", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("Nul", t)
-        with pytest.raises(ConfifyError):
+        with pytest.raises(ConfifyParseError):
             _parseu("Fa", t)
 
 
@@ -584,9 +584,9 @@ def test_typed_dict():
         "c": 3,
         "d": 4,
     }
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": {"b": 1, "c": 2}, "d": 4}, dict[str, int])
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": 1, "b": 2, "c": 1.34, "d": 4}, dict[str, int])
 
     assert _parse({}, dict[str, str]) == {}
@@ -617,7 +617,7 @@ def test_literal():
     assert _parse("abc", Literal["abc"]) == "abc"
     assert _parse("abc", Literal["abc", "def"]) == "abc"
     assert _parse("def", Literal["abc", "def"]) == "def"
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse("ghi", Literal["abc", "def"])
 
     assert _parse(123, Literal[123, "123"]) == 123
@@ -661,12 +661,12 @@ def test_union():
         assert _parseu('"True"', t) == "True"
         assert _parseu('"False"', t) == "False"
 
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": 1, "b": 2}, Union[int, str])
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(123.456, Union[int, str])
     assert _parseu("123.456", Union[int, str]) == "123.456"
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse(True, Union[int, str])
 
 
@@ -687,11 +687,11 @@ def test_enum():
     assert _parseu("a", A) == A.a
     assert _parseu("b", A) == A.b
     assert _parseu("c", A) == A.c
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse('"a"', A)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse('"b"', A)
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse('"c"', A)
     assert _parse(A.a, A) == A.a
     assert _parse(A.b, A) == A.b
@@ -724,13 +724,13 @@ def test_dataclass():
     assert _parse({"a": "a", "b": U("1"), "c": U("True")}, A) == A("a", 1, True)
     assert _parse({"a": "a", "b": U("1"), "c": U("True"), "d": U("6")}, A) == A("a", 1, True, 6)
     # incorrect type
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1"), "c": 33}, A)
     # missing field
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1")}, A)
     # extra field
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1"), "c": "True", "d": U("6"), "e": U("7")}, A)
 
     # nested dataclass
@@ -761,13 +761,13 @@ def test_typeddict():
     assert _parse({"a": "a", "b": U("1"), "c": U("True")}, C) == C({"a": "a", "b": 1, "c": True})
     assert _parse({"a": "a", "b": U("1"), "c": U("True"), "d": U("6")}, C) == C({"a": "a", "b": 1, "c": True, "d": 6})
     # incorrect type
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1"), "c": 33}, C)
     # missing field
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1")}, C)
     # extra field
-    with pytest.raises(ConfifyError):
+    with pytest.raises(ConfifyParseError):
         _parse({"a": "a", "b": U("1"), "c": U("True"), "d": U("6"), "e": U("7")}, C)
 
     # nested dataclass
