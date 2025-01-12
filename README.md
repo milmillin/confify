@@ -5,7 +5,7 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 **Key features:**
 
 - Uses type annotations from dataclasses.
-- Uses dotlist notations for CLI arguments. (e.g., `--encoder.depth 6`)
+- Uses dotlist notations for CLI arguments. (e.g., `--encoder.depth 6`, `--model.hidden_dims '(10, 20)'`)
 - Loads partial configurations from YAML in CLI arguments. (e.g., `---encoder encoder.yaml`)
 - Supports nested dataclasses.
 - No dependencies.
@@ -14,7 +14,7 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 
 (TODO) Upload to PyPI
 ```bash
-pip install confify
+pip install git+https://github.com/milmillin/confify.git
 ```
 
 ## Usage
