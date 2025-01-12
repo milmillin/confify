@@ -489,7 +489,7 @@ def _config_dump_impl(config: Any, ignore: list[str] = []) -> Any:
         return config
 
 
-def config_dump_yaml(file: Union[str, Path], config: Any, ignore: list[str] = []) -> Any:
+def config_dump_yaml(config: Any, file: Union[str, Path], ignore: list[str] = []) -> Any:
     data = _config_dump_impl(config, ignore=ignore)
     yaml.dump(data, Path(file).open("w", encoding="utf-8"), Dumper=ConfifyDumper)
     return data
