@@ -4,11 +4,12 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 
 **Key features:**
 
-- Uses type annotations from dataclasses.
+- Uses type annotations from `dataclass` and `TypedDict`.
 - Uses dotlist notations for CLI arguments. (e.g., `--encoder.depth 6`, `--model.hidden_dims '(10, 20)'`)
 - Loads partial configurations from YAML in CLI arguments. (e.g., `---encoder encoder.yaml`)
-- Supports nested dataclasses.
-- No dependencies.
+- Supports subclassing of `dataclass` by specifying the classname. (e.g., `--encoder.$type mymodule.MyEncoder`)
+- Supports `Optional`, `Union`, `Literal`.
+- Has minimal dependencies (only `PyYaml`).
 
 ## Installation
 
@@ -62,7 +63,7 @@ python example.py \
     --run_id exp1
 ```
 
-**Important**: We **don't** support equal signs in dotlist notations. For example, `--encoder.depth=6` is not supported.
+We **do not** support equal signs in dotlist notations (for now). For example, `--encoder.depth=6` will not work.
 
 ### Loading partial configurations from YAML
 
@@ -122,14 +123,15 @@ python example.py --- base_config.yaml
 
 ### Type Resolution
 
-Since all arguments from CLI are passed as strings and some fields in a YAML file are automatically converted to primitive type, we need to convert them to the correct type. Here are conversion rules for each primitive type:
+Arguments from CLI are converted to the annotated type using the following rule:
 
 - `int`, `float`, `Path`: we use default constructors.
-- `bool`: we convert `"true"`, `"1"`, `1` to `True`, and `"false"`, `"0"`, `0` to `False`.
+- `bool`: we convert case-insensitive `"true"`, `"on"`, `"yes"` to `True`, and `"false"`, `"off"`, `"no"` to `False`.
 - `str`: if the value is surrounded by quotes, we use `ast.literal_eval` to convert it to a string. Otherwise, we use the value as is.
-- `None`: we convert `"null"` to `None`.
+- `None`: we convert case-insensitive `"null"`, `"~"`, `"none"` to `None`.
+- `Enum`: we find the enum entry with the same name.
 
-There may be ambiguity when the type is `Union` or `Literal`. For example, if a user input `"null"` for type `Union[str, None]`, tt can be either `None` or a string `"null"`. We follow the following order and returns the first that succeeds:
+There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For example, if a user input `"null"` for type `Union[str, None]`, it can be interpreted as either `None` or a string `"null"`. We follow the following order and returns the first that succeeds:
 
 1. Types not listed below (from left to right)
 2. `None`
@@ -138,15 +140,22 @@ There may be ambiguity when the type is `Union` or `Literal`. For example, if a 
 5. `float`
 6. `str`
 
-So the above example will be parsed as `None`. To get a string `"null"`, the user needs to input `"\"null\""` with quotes. 
+So `"null"` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to input `"\"null\""` with quotes. 
 
-If two or more types (excluding `str`) are valid candidates, a warning will be issued. For example, if the user input `1` for type `Union[int, bool, str]`, we will return `True` and a warning will be issued.
+#### Dataclasses Subclassing
+If the type incidated by `$type` is a subclass of the annotated type, we use the constructor of `$type`. Otherwise, a warning will be issued, and the object will be constructed using the annotated type. We raise an exception if the value contains extra fields or missing fields (of the constructor).
+
+#### YAML
+Values loaded from YAML usually have the correct type, except for type `Union[Enum, str]` where the value will always be converted to a matching `Enum`.
+
+`config_dump_yaml` will dump the config to a YAML file without special tags. We add `$type` field to the dataclasses to indicate the type of the dataclass.
+
 
 ### Supported types
 
 `int`, `float`, `bool`, `str`, `None`, `Path`, `list`, `tuple`, `dict`, `Enum`, `dataclass`, `Union`, `Literal`, `TypedDict`
 
-## Limitations
+## Limitations and Known Issues
 
 1. Lists and tuples of dataclasses are not supported. There is currently no way to input a list of dataclasses in CLI arguments.
 
@@ -164,6 +173,8 @@ class Config:
 ```
 
 Running `python example.py --a.v1 2` will result in `Config(a=A(v1=2, v2=True))`. Notice `a.v2` gets the default value from the definition of `A` bypassing the default factory. Running `python example.py` will result in `Config(a=A(v1=1, v2=False))` using the default factory.
+
+3. For type `Union[Enum, str]`, the value from YAML will always be converted to a matching `Enum` without a way of forcing it to `str`. In CLI arguments, enclosing the value in quotes will still force it to `str`.
 
 ## License
 
