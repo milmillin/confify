@@ -1,1 +1,1 @@
-from .base import CLIBuilder, default_suffix_fn
+from .base import CLIBuilder

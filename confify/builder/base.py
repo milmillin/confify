@@ -9,9 +9,8 @@ from ..base import ConfifyCLIConfig
 
 
 class _ArgEntry(NamedTuple):
-    key: str
-    values: list[str]
-    suffix: Optional[list[str]]
+    suffix: Optional[str]
+    kv: list[tuple[str, Any]]
 
 
 _T = TypeVar("_T")
@@ -49,30 +48,18 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
 def _stringify(v: Any) -> str:
     return shlex.quote(_stringify_impl(v))
 
-def default_suffix_fn(v: Any, key: str) -> str:
-    k = key.rsplit(".", 1)[-1].replace("_", "-")
-    return f"_{k}={v}"
 
 class CLIBuilder:
-    def __init__(self, base_name: str = "", config: ConfifyCLIConfig = ConfifyCLIConfig()):
-        self.entries: list[_ArgEntry] = []
+    def __init__(self, base_name: str = ""):
+        self.entries: list[list[_ArgEntry]] = []
         self.base_name = base_name
-        self.config = config
 
-    def _add(self, key: str, value: Any, suffix: Optional[str] = None) -> Self:
-        suffix_ = [suffix] if suffix is not None else None
-        self.entries.append(_ArgEntry(key, [_stringify(value)], suffix_))
+    def add(self, key: str, value: Any) -> Self:
+        self.entries.append([_ArgEntry(None, [(key, _stringify(value))])])
         return self
 
-    def add(self, key: str, value: Any, suffix: Optional[str] = None) -> Self:
-        return self._add(self.config.prefix + key, value, suffix)
-
-    def add_yaml(self, key: str, value: Union[str, Path], suffix: Optional[str] = None) -> Self:
-        return self._add(self.config.yaml_prefix + key, value, suffix)
-
-    def _add_sweep(
+    def add_sweep(
         self,
-        prefix: str,
         key: str,
         values: list[_T],
         suffix: Union[str, list[str], None] = None,
@@ -90,42 +77,26 @@ class CLIBuilder:
                 if len(suffix) != len(values):
                     raise ValueError("suffix must have the same length as values")
                 suffix_ = list(suffix)
-        self.entries.append(_ArgEntry(prefix + key, [_stringify(v) for v in values], suffix_))
+        else:
+            raise ValueError("Must specify either suffix or suffix_fn")
+        if len(set(suffix_)) != len(suffix_):
+            raise ValueError("suffix must be unique")
+        self.entries.append([_ArgEntry(s, [(key, _stringify(v))]) for s, v in zip(suffix_, values)])
         return self
 
-    def add_sweep(
+    def add_sweep_set(
         self,
-        key: str,
-        values: list[_T],
-        suffix: Union[str, list[str], None] = None,
-        suffix_fn: Optional[Callable[[_T, str], str]] = None,
+        sets: dict[str, dict[str, _T]],
     ) -> Self:
-        return self._add_sweep(self.config.prefix, key, values, suffix, suffix_fn)
-
-    def add_yaml_sweep(
-        self,
-        key: str,
-        values: list[_FileLikeT],
-        suffix: Union[str, list[str], None] = None,
-        suffix_fn: Optional[Callable[[_FileLikeT, str], str]] = None,
-    ) -> Self:
-        return self._add_sweep(self.config.yaml_prefix, key, values, suffix, suffix_fn)
+        self.entries.append([_ArgEntry(s, [(k, _stringify(v)) for k, v in set_.items()]) for s, set_ in sets.items()])
+        return self
 
     def _build(self) -> Iterator[_CLIBuilderResult]:
-        entries: list[list[tuple[str, Any, Optional[str]]]] = []
-        for e in self.entries:
-            key_list = [e.key] * len(e.values)
-            suffix_list = [None] * len(e.values) if e.suffix is None else e.suffix
-            entries.append(list(zip(key_list, e.values, suffix_list)))
-        for all_args in itertools.product(*entries):
-            arg_list: list[str] = []
-            for k, v, _ in all_args:
-                arg_list.append(k)
-                arg_list.append(v)
+        for all_args in itertools.product(*self.entries):
             yield _CLIBuilderResult(
-                name=self.base_name + "".join([s for _, _, s in all_args if s is not None]),
-                args=[f"{k} {v}" for k, v, _ in all_args],
-                arg_list=arg_list,
+                name=self.base_name + "".join([s for s, _ in all_args if s is not None]),
+                args=[f"{k} {v}" for _, kvs in all_args for k, v in kvs],
+                arg_list=[x for _, kvs in all_args for kv in kvs for x in kv],
             )
 
     def build(self) -> list[_CLIBuilderResult]:
