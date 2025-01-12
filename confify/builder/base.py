@@ -5,7 +5,7 @@ from enum import Enum
 import json
 import shlex
 
-from .base import ConfifyCLIConfig
+from ..base import ConfifyCLIConfig
 
 
 class _ArgEntry(NamedTuple):
