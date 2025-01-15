@@ -411,8 +411,21 @@ def _parse(d: Any, cls: _TypeFormT) -> Any:
     return parse(d, cls)
 
 
-def parse_yaml(file: Union[str, Path], cls: type[_T]) -> _T:
+def parse_yaml(file: Union[str, Path], cls: type[_T], /, keys: str = "") -> _T:
+    """
+    Parse a YAML file into a specified type.
+
+    Args:
+        `file`: The path to the YAML file.
+        `cls`: The type to parse the YAML file into.
+        `keys`: A dotlist notation of keys to parse. If empty, parse the entire file.
+    """
     value = yaml.safe_load(Path(file).open("r", encoding="utf-8"))
+    keys_ = keys.split(".") if keys else []
+    for k in keys_:
+        if k not in value:
+            raise ConfifyParseError(f"Key {k} not found in YAML file.")
+        value = value[k]
     return parse(value, cls)
 
 
@@ -489,7 +502,15 @@ def _config_dump_impl(config: Any, ignore: list[str] = []) -> Any:
         return config
 
 
-def config_dump_yaml(config: Any, file: Union[str, Path], ignore: list[str] = []) -> Any:
+def config_dump_yaml(config: Any, file: Union[str, Path], /, ignore: list[str] = []) -> Any:
+    """
+    Dump a config to a YAML file.
+
+    Args:
+        `config`: The config to dump.
+        `file`: The path to the YAML file.
+        `ignore`: A list of fields in dotlist notations to ignore.
+    """
     data = _config_dump_impl(config, ignore=ignore)
     yaml.dump(data, Path(file).open("w", encoding="utf-8"), Dumper=ConfifyDumper)
     return data
