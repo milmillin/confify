@@ -338,10 +338,10 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str, options: ConfifyOptions) -
             if isinstance(d, dict):
                 args = {}
                 warns: list[_ParseWarningEntry] = []
-                if "$type" in d:
-                    new_cls = _import_string(d["$type"])
+                if options.type_key in d:
+                    new_cls = _import_string(d[options.type_key])
                     d = dict(d)
-                    del d["$type"]
+                    del d[options.type_key]
                     if not issubclass(new_cls, cls):  # type: ignore
                         warns.append(
                             _ParseWarningEntry(
