@@ -52,7 +52,7 @@ class B:
 
 def assert_identity(data: Any):
     tmp = Path("tmp.yaml")
-    config_dump_yaml(tmp, data)
+    config_dump_yaml(data, tmp)
     recon = parse_yaml(tmp, type(data))
     if tmp.exists():
         tmp.unlink()

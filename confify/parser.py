@@ -29,7 +29,7 @@ from functools import partialmethod
 import warnings
 import ast
 
-from .base import ConfifyParseError, _warning, ConfifyCLIConfig
+from .base import ConfifyParseError, _warning, ConfifyOptions
 from .yaml import ConfifyDumper
 
 _T = TypeVar("_T")
@@ -171,7 +171,7 @@ def _sanitize(d):
         return d
 
 
-def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult:
+def _parse_impl(d: Any, cls: _TypeFormT, prefix: str, options: ConfifyOptions) -> _ParseResult:
     """
     Returns:
     - parsed object
@@ -237,7 +237,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                     if len(args) == 0:
                         args = (Any,)
                     if len(args) == 1:
-                        results = [_parse_impl(d, args[0], f"{prefix}[{i}]") for i, d in enumerate(elems)]
+                        results = [_parse_impl(d, args[0], f"{prefix}[{i}]", options) for i, d in enumerate(elems)]
                         return _ParseResult(
                             [r.value for r in results],
                             warnings=sum([r.warnings for r in results], []),
@@ -248,13 +248,13 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                     if len(args) == 0 and (cls is tuple or cls is Tuple):
                         args = (Any, ...)
                     if len(args) == 2 and args[1] == Ellipsis:
-                        results = [_parse_impl(d, args[0], f"{prefix}[{i}]") for i, d in enumerate(elems)]
+                        results = [_parse_impl(d, args[0], f"{prefix}[{i}]", options) for i, d in enumerate(elems)]
                         return _ParseResult(
                             tuple([r.value for r in results]),
                             warnings=sum([r.warnings for r in results], []),
                         )
                     elif len(args) == len(elems):
-                        results = [_parse_impl(d, args[i], f"{prefix}[{i}]") for i, d in enumerate(elems)]
+                        results = [_parse_impl(d, args[i], f"{prefix}[{i}]", options) for i, d in enumerate(elems)]
                         return _ParseResult(
                             tuple([r.value for r in results]),
                             warnings=sum([r.warnings for r in results], []),
@@ -267,8 +267,8 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                 if isinstance(d, dict):
                     entries = [
                         (
-                            _parse_impl(k, args[0], f"{prefix}({k})"),
-                            _parse_impl(v, args[1], f"{prefix}[{k}]."),
+                            _parse_impl(k, args[0], f"{prefix}({k})", options),
+                            _parse_impl(v, args[1], f"{prefix}[{k}].", options),
                         )
                         for k, v in d.items()
                     ]
@@ -281,7 +281,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
             candidates: list[_ParseResult] = []
             for arg in args:
                 try:
-                    val = _parse_impl(d, type(arg), f"{prefix}")
+                    val = _parse_impl(d, type(arg), f"{prefix}", options)
                     if val.value == arg:
                         candidates.append(val)
                 except ConfifyParseError:
@@ -289,14 +289,14 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
             candidates.sort(key=lambda x: _TYPE_RANK.get(type(x.value), 0))
             non_str_candidates = [c for c in candidates if not isinstance(c.value, str)]
             if len(non_str_candidates) > 1:
-                options = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
+                options_ = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
                 candidates[0].warnings.insert(
                     0,
                     _ParseWarningEntry(
                         loc=prefix,
                         type=cls,
                         value=d,
-                        message=f"Ambiguous input for type [{cls}] at [{prefix}]. Using [{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}]. Options are [{options}].",
+                        message=f"Ambiguous input for type [{cls}] at [{prefix}]. Using [{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}]. Options are [{options_}].",
                     ),
                 )
             if len(candidates) >= 1:
@@ -306,20 +306,20 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
             candidates: list[_ParseResult] = []
             for arg in args:
                 try:
-                    candidates.append(_parse_impl(d, arg, f"{prefix}"))
+                    candidates.append(_parse_impl(d, arg, f"{prefix}", options))
                 except ConfifyParseError:
                     pass
             candidates.sort(key=lambda x: _TYPE_RANK.get(type(x.value), 0))
             non_str_candidates = [c for c in candidates if not isinstance(c.value, str)]
             if len(non_str_candidates) > 1:
-                options = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
+                options_ = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
                 candidates[0].warnings.insert(
                     0,
                     _ParseWarningEntry(
                         loc=prefix,
                         type=cls,
                         value=d,
-                        message=f"Ambiguous input for type [{cls}] at [{prefix}]. Using [{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}]. Options are [{options}].",
+                        message=f"Ambiguous input for type [{cls}] at [{prefix}]. Using [{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}]. Options are [{options_}].",
                     ),
                 )
             if len(candidates) >= 1:
@@ -358,7 +358,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                         if f.default == MISSING and f.default_factory == MISSING:
                             raise ValueError(f"Missing field: {f.name}")
                     else:
-                        results = _parse_impl(d[f.name], f.type, f"{prefix}.{f.name}")
+                        results = _parse_impl(d[f.name], f.type, f"{prefix}.{f.name}", options)
                         warns.extend(results.warnings)
                         args[f.name] = results.value
                 for k in d.keys():
@@ -380,7 +380,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
                     else:
                         if get_origin(typ) is NotRequired or get_origin(typ) is Required:
                             typ = get_args(typ)[0]
-                        results = _parse_impl(d[field], typ, f"{prefix}.{field}")
+                        results = _parse_impl(d[field], typ, f"{prefix}.{field}", options)
                         warns.extend(results.warnings)
                         args[field] = results.value
                 for k in d.keys():
@@ -396,8 +396,9 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str = "<root>") -> _ParseResult
     raise ConfifyParseError(f"Invalid data for type [{cls}] at [{prefix}]. Got [{repr(d)}].")
 
 
-def parse(d: Any, cls: type[_T]) -> _T:
-    res = _parse_impl(d, cls, "<root>")
+def parse(d: Any, cls: type[_T], options: Optional[ConfifyOptions] = None) -> _T:
+    options = ConfifyOptions.get_default() if options is None else options
+    res = _parse_impl(d, cls, "<root>", options)
     if len(res.warnings) > 0:
         warns: list[str] = []
         for w in res.warnings:
@@ -407,11 +408,13 @@ def parse(d: Any, cls: type[_T]) -> _T:
 
 
 # alias to avoid type errors in tests
-def _parse(d: Any, cls: _TypeFormT) -> Any:
-    return parse(d, cls)
+def _parse(d: Any, cls: _TypeFormT, options: Optional[ConfifyOptions] = None) -> Any:
+    return parse(d, cls, options)
 
 
-def parse_yaml(file: Union[str, Path], cls: type[_T], /, keys: str = "") -> _T:
+def parse_yaml(
+    file: Union[str, Path], cls: type[_T], /, keys: str = "", options: Optional[ConfifyOptions] = None
+) -> _T:
     """
     Parse a YAML file into a specified type.
 
@@ -426,7 +429,7 @@ def parse_yaml(file: Union[str, Path], cls: type[_T], /, keys: str = "") -> _T:
         if k not in value:
             raise ConfifyParseError(f"Key {k} not found in YAML file.")
         value = value[k]
-    return parse(value, cls)
+    return parse(value, cls, options=options)
 
 
 ################################################################################
@@ -472,7 +475,7 @@ def _classname(obj: Any) -> str:
     return name
 
 
-def _config_dump_impl(config: Any, ignore: list[str] = []) -> Any:
+def _config_dump_impl(config: Any, ignore: list[str], options: ConfifyOptions) -> Any:
     field_ignore: dict[str, list[str]] = {}
     ignored_fields: set[str] = set()
     for f in ignore:
@@ -486,23 +489,25 @@ def _config_dump_impl(config: Any, ignore: list[str] = []) -> Any:
             field_ignore[field].append(subfield)
     if is_dataclass(config):
         res = {
-            f.name: _config_dump_impl(getattr(config, f.name), ignore=field_ignore.get(f.name, []))
+            f.name: _config_dump_impl(getattr(config, f.name), ignore=field_ignore.get(f.name, []), options=options)
             for f in fields(config)
             if f.name not in ignored_fields
         }
-        res["$type"] = _classname(config)
+        res[options.type_key] = _classname(config)
         return res
     elif isinstance(config, dict):
-        return {k: _config_dump_impl(v, ignore=field_ignore.get(k, [])) for k, v in config.items()}
+        return {k: _config_dump_impl(v, ignore=field_ignore.get(k, []), options=options) for k, v in config.items()}
     elif isinstance(config, list):
-        return [_config_dump_impl(v) for v in config]
+        return [_config_dump_impl(v, ignore=[], options=options) for v in config]
     elif isinstance(config, tuple):
-        return tuple(_config_dump_impl(v) for v in config)
+        return tuple(_config_dump_impl(v, ignore=[], options=options) for v in config)
     else:
         return config
 
 
-def config_dump_yaml(config: Any, file: Union[str, Path], /, ignore: list[str] = []) -> Any:
+def config_dump_yaml(
+    config: Any, file: Union[str, Path], /, ignore: list[str] = [], options: Optional[ConfifyOptions] = None
+) -> Any:
     """
     Dump a config to a YAML file.
 
@@ -511,29 +516,31 @@ def config_dump_yaml(config: Any, file: Union[str, Path], /, ignore: list[str] =
         `file`: The path to the YAML file.
         `ignore`: A list of fields in dotlist notations to ignore.
     """
-    data = _config_dump_impl(config, ignore=ignore)
+    options = ConfifyOptions.get_default() if options is None else options
+    data = _config_dump_impl(config, ignore=ignore, options=options)
     yaml.dump(data, Path(file).open("w", encoding="utf-8"), Dumper=ConfifyDumper)
     return data
 
 
-def read_config_from_argv(Config: Type[_T], argv: list[str], config: ConfifyCLIConfig = ConfifyCLIConfig()) -> _T:
+def read_config_from_argv(Config: Type[_T], argv: list[str], options: Optional[ConfifyOptions] = None) -> _T:
+    options = ConfifyOptions.get_default() if options is None else options
     args: dict = {}
     i = 0
     while i < len(argv):
         key = argv[i]
         value = argv[i + 1]
-        if key.startswith(config.yaml_prefix):
-            key = key[len(config.yaml_prefix) :]
+        if key.startswith(options.yaml_prefix):
+            key = key[len(options.yaml_prefix) :]
             value = yaml.safe_load(Path(value).open("r", encoding="utf-8"))
-        elif key.startswith(config.prefix):
-            key = key[len(config.prefix) :]
+        elif key.startswith(options.prefix):
+            key = key[len(options.prefix) :]
             value = _UnresolvedString(value)
         else:
-            raise ValueError(f"Invalid argument: {key}. Must start with {config.prefix} or {config.yaml_prefix}")
+            raise ValueError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
         _insert_dict(args, key.split(".") if key else [], value)
         i += 2
     return parse(args, Config)
 
 
-def read_config_from_cli(Config: Type[_T], config: ConfifyCLIConfig = ConfifyCLIConfig()) -> _T:
-    return read_config_from_argv(Config, sys.argv[1:], config=config)
+def read_config_from_cli(Config: Type[_T], options: Optional[ConfifyOptions] = None) -> _T:
+    return read_config_from_argv(Config, sys.argv[1:], options=options)

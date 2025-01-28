@@ -18,9 +18,22 @@ class ConfifyWarning(UserWarning):
     pass
 
 
-class ConfifyCLIConfig:
+class ConfifyOptions:
     prefix: str = "--"
     yaml_prefix: str = "---"
+    type_key: str = "$type"
+
+    @classmethod
+    def get_default(cls) -> "ConfifyOptions":
+        return _default_options
+
+    @classmethod
+    def set_default(cls, value: "ConfifyOptions"):
+        global _default_options
+        _default_options = value
+
+
+_default_options = ConfifyOptions()
 
 
 def _warning(msg: str) -> None:
