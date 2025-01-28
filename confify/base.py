@@ -18,6 +18,7 @@ class ConfifyWarning(UserWarning):
     pass
 
 
+@dataclass
 class ConfifyOptions:
     prefix: str = "--"
     yaml_prefix: str = "---"
