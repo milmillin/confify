@@ -34,7 +34,7 @@ ConfifyDumper.add_multi_representer(Path, ConfifyDumper.represent_path)
 ConfifyDumper.add_representer(list, ConfifyDumper.represent_list)
 
 
-class ConfifyLoader(yaml.SafeLoader):
+class ConfifyLoader(yaml.FullLoader):
     def construct_path(self, tag_suffix, node):
         return Path(*map(str, self.construct_sequence(node)))
 

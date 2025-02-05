@@ -114,3 +114,4 @@ _PATH = Path(__file__).parent
 def test_read_path():
     x = read_yaml(_PATH / "yaml_files" / "path.yaml")
     assert x["path"] == Path("asdf", "bbbb", "5123")
+    assert x["tuple"] == (1, 2, 3)

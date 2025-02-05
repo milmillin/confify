@@ -1,4 +1,8 @@
 path: !!python/object/apply:pathlib.PosixPath
-- asdf
-- bbbb
-- 5123
+  - asdf
+  - bbbb
+  - 5123
+tuple: !!python/tuple
+  - 1
+  - 2
+  - 3
