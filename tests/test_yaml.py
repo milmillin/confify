@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Union, Literal
 from enum import Enum
 
-from confify.parser import config_dump_yaml, parse_yaml
+from confify.parser import config_dump_yaml, parse_yaml, read_yaml
 
 
 class Animal(Enum):
@@ -61,32 +61,32 @@ def assert_identity(data: Any):
 
 def test_yaml():
     a = A(
-            1,
-            1.1,
-            True,
-            "a",
-            None,
-            Path("a"),
-            [1, 2, 3],
-            ["a", "b", "c"],
-            (1, "null"),
-            (-1, "a", False),
-            (1, 2),
-            ("a", "b"),
-            [[1, 2, 3], [4, 5], [6]],
-            (234, ("True", True)),
-            {"a": 1, "b": -123},
-            {"a": "a", "b": "BB"},
-            {"a": [1, 2, 3], "b": [1, 5, 10, 3]},
-            "ant",
-            123,
-            Animal.null,
-            None,
-            "False",
-            "1",
-            "~",
-            "hello\nworld"
-        )
+        1,
+        1.1,
+        True,
+        "a",
+        None,
+        Path("a"),
+        [1, 2, 3],
+        ["a", "b", "c"],
+        (1, "null"),
+        (-1, "a", False),
+        (1, 2),
+        ("a", "b"),
+        [[1, 2, 3], [4, 5], [6]],
+        (234, ("True", True)),
+        {"a": 1, "b": -123},
+        {"a": "a", "b": "BB"},
+        {"a": [1, 2, 3], "b": [1, 5, 10, 3]},
+        "ant",
+        123,
+        Animal.null,
+        None,
+        "False",
+        "1",
+        "~",
+        "hello\nworld",
+    )
     assert_identity(a)
     assert_identity(B(1, "a", a))
 
@@ -106,3 +106,11 @@ def test_known_issues():
                 "ANT",
             )
         )
+
+
+_PATH = Path(__file__).parent
+
+
+def test_read_path():
+    x = read_yaml(_PATH / "yaml_files" / "path.yaml")
+    assert x["path"] == Path("asdf", "bbbb", "5123")

@@ -2,6 +2,9 @@ from typing import Any, Union, Type, Optional, List, Tuple, Dict, get_origin, Li
 from enum import Enum
 import yaml
 from pathlib import Path
+from dataclasses import fields, is_dataclass
+
+from .base import ConfifyOptions
 
 
 class ConfifyDumper(yaml.SafeDumper):
@@ -29,3 +32,11 @@ ConfifyDumper.add_representer(tuple, ConfifyDumper.represent_tuple)
 ConfifyDumper.add_representer(str, ConfifyDumper.represent_str)
 ConfifyDumper.add_multi_representer(Path, ConfifyDumper.represent_path)
 ConfifyDumper.add_representer(list, ConfifyDumper.represent_list)
+
+
+class ConfifyLoader(yaml.SafeLoader):
+    def construct_path(self, tag_suffix, node):
+        return Path(*map(str, self.construct_sequence(node)))
+
+
+ConfifyLoader.add_multi_constructor("tag:yaml.org,2002:python/object/apply:pathlib", ConfifyLoader.construct_path)

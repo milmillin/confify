@@ -1,0 +1,4 @@
+path: !!python/object/apply:pathlib.PosixPath
+- asdf
+- bbbb
+- 5123

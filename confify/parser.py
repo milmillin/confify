@@ -30,7 +30,7 @@ import warnings
 import ast
 
 from .base import ConfifyParseError, _warning, ConfifyOptions
-from .yaml import ConfifyDumper
+from .yaml import ConfifyDumper, ConfifyLoader
 
 _T = TypeVar("_T")
 
@@ -412,6 +412,10 @@ def _parse(d: Any, cls: _TypeFormT, options: Optional[ConfifyOptions] = None) ->
     return parse(d, cls, options)
 
 
+def read_yaml(file: Union[str, Path]) -> Any:
+    return yaml.load(Path(file).open("r", encoding="utf-8"), Loader=ConfifyLoader)
+
+
 def parse_yaml(
     file: Union[str, Path], cls: type[_T], /, keys: str = "", options: Optional[ConfifyOptions] = None
 ) -> _T:
@@ -423,7 +427,7 @@ def parse_yaml(
         `cls`: The type to parse the YAML file into.
         `keys`: A dotlist notation of keys to parse. If empty, parse the entire file.
     """
-    value = yaml.safe_load(Path(file).open("r", encoding="utf-8"))
+    value = read_yaml(file)
     keys_ = keys.split(".") if keys else []
     for k in keys_:
         if k not in value:
@@ -461,6 +465,35 @@ def _insert_dict(d: dict[str, Any], keys: list[str], value: Any, prefix: str = "
             _warning(f"[{prefix}] Overriding non-dict value [{dd}] with [{value}]")
             d[keys[0]] = {}
         _insert_dict(dd, keys[1:], value)
+
+
+def read_config_from_argv(Config: Type[_T], argv: list[str], options: Optional[ConfifyOptions] = None) -> _T:
+    options = ConfifyOptions.get_default() if options is None else options
+    args: dict = {}
+    i = 0
+    while i < len(argv):
+        key = argv[i]
+        value = argv[i + 1]
+        if key.startswith(options.yaml_prefix):
+            key = key[len(options.yaml_prefix) :]
+            value = read_yaml(value)
+        elif key.startswith(options.prefix):
+            key = key[len(options.prefix) :]
+            value = _UnresolvedString(value)
+        else:
+            raise ValueError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
+        _insert_dict(args, key.split(".") if key else [], value)
+        i += 2
+    return parse(args, Config)
+
+
+def read_config_from_cli(Config: Type[_T], options: Optional[ConfifyOptions] = None) -> _T:
+    return read_config_from_argv(Config, sys.argv[1:], options=options)
+
+
+################################################################################
+# Dumping
+################################################################################
 
 
 def _classname(obj: Any) -> str:
@@ -522,25 +555,13 @@ def config_dump_yaml(
     return data
 
 
-def read_config_from_argv(Config: Type[_T], argv: list[str], options: Optional[ConfifyOptions] = None) -> _T:
+def config_dump(config: Any, /, ignore: list[str] = [], options: Optional[ConfifyOptions] = None) -> Any:
+    """
+    Dump a config to a Python dict
+
+    Args:
+        `config`: The config to dump.
+        `ignore`: A list of fields in dotlist notations to ignore.
+    """
     options = ConfifyOptions.get_default() if options is None else options
-    args: dict = {}
-    i = 0
-    while i < len(argv):
-        key = argv[i]
-        value = argv[i + 1]
-        if key.startswith(options.yaml_prefix):
-            key = key[len(options.yaml_prefix) :]
-            value = yaml.safe_load(Path(value).open("r", encoding="utf-8"))
-        elif key.startswith(options.prefix):
-            key = key[len(options.prefix) :]
-            value = _UnresolvedString(value)
-        else:
-            raise ValueError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
-        _insert_dict(args, key.split(".") if key else [], value)
-        i += 2
-    return parse(args, Config)
-
-
-def read_config_from_cli(Config: Type[_T], options: Optional[ConfifyOptions] = None) -> _T:
-    return read_config_from_argv(Config, sys.argv[1:], options=options)
+    return _config_dump_impl(config, ignore=ignore, options=options)
