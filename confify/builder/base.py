@@ -86,7 +86,7 @@ class CLIBuilder:
 
     def add_sweep_set(
         self,
-        sets: dict[str, dict[str, _T]],
+        sets: dict[str, dict[str, Any]],
     ) -> Self:
         self.entries.append([_ArgEntry(s, [(k, _stringify(v)) for k, v in set_.items()]) for s, set_ in sets.items()])
         return self
