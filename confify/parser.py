@@ -177,6 +177,7 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str, options: ConfifyOptions) -
     - parsed object
     - cost
     """
+    warns: list[_ParseWarningEntry] = []
     try:
         if get_origin(cls) is Annotated:
             cls = get_args(cls)[0]
@@ -390,8 +391,11 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str, options: ConfifyOptions) -
         else:
             raise ConfifyParseError(f"Unsupported type [{cls}] at [{prefix}].")
     except (ValueError, KeyError) as e:
+        warn_msg = ""
+        if warns:
+            warn_msg = "\nWarnings:\n" + "\n".join([f"\t{w.message}" for w in warns])
         raise ConfifyParseError(
-            f"Invalid data for type [{cls}] at [{prefix}]. Got [{repr(d)}].\n\t{type(e).__name__}: {e}"
+            f"Invalid data for type [{cls}] at [{prefix}]. Got [{repr(d)}].\n\t{type(e).__name__}: {e}" + warn_msg
         )
     raise ConfifyParseError(f"Invalid data for type [{cls}] at [{prefix}]. Got [{repr(d)}].")
 
