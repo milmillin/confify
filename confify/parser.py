@@ -354,17 +354,36 @@ def _parse_impl(d: Any, cls: _TypeFormT, prefix: str, options: ConfifyOptions) -
                         )
                     else:
                         cls = new_cls
+                missing_fields: list[str] = []
+                extra_fields: list[str] = []
                 for f in fields(cls):
                     if f.name not in d:
                         if f.default == MISSING and f.default_factory == MISSING:
-                            raise ValueError(f"Missing field: {f.name}")
+                            missing_fields.append(f.name)
                     else:
                         results = _parse_impl(d[f.name], f.type, f"{prefix}.{f.name}", options)
                         warns.extend(results.warnings)
                         args[f.name] = results.value
                 for k in d.keys():
                     if k not in [f.name for f in fields(cls)]:
-                        raise ValueError(f"Got extra field: {k}")
+                        extra_fields.append(k)
+                if len(missing_fields) > 0:
+                    msg = f"Missing fields: {', '.join(missing_fields)}"
+                    if len(extra_fields) > 0:
+                        msg += f"\nExtra fields: {', '.join(extra_fields)}"
+                    raise ValueError(msg)
+                if len(extra_fields) > 0:
+                    if options.ignore_extra_fields:
+                        warns.append(
+                            _ParseWarningEntry(
+                                loc=f"{prefix}",
+                                type=cls.__name__,
+                                value=d,
+                                message=f"Ignoring extra fields: {', '.join(extra_fields)}",
+                            )
+                        )
+                    else:
+                        raise ValueError(f"Got extra fields: {', '.join(extra_fields)}")
                 return _ParseResult(cls(**args), warnings=warns)
             elif isinstance(d, cls):
                 return _ParseResult(d)

@@ -23,6 +23,7 @@ class ConfifyOptions:
     prefix: str = "--"
     yaml_prefix: str = "---"
     type_key: str = "$type"
+    ignore_extra_fields: bool = False
 
     @classmethod
     def get_default(cls) -> "ConfifyOptions":
