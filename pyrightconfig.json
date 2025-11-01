@@ -1,0 +1,20 @@
+{
+  "include": [
+    "confify"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "build",
+    "dist",
+    ".venv",
+    "venv",
+    "tests"
+  ],
+  "ignore": [],
+  "defineConstant": {},
+  "pythonVersion": "3.11",
+  "pythonPlatform": "All",
+  "typeCheckingMode": "standard",
+}

@@ -1,3 +1,5 @@
+__version__ = "0.0.1"
+
 from .base import ConfifyParseError, ConfifyWarning, ConfifyOptions
 from .parser import (
     parse,
@@ -8,3 +10,17 @@ from .parser import (
     config_dump,
     read_yaml,
 )
+
+__all__ = [
+    "__version__",
+    "ConfifyParseError",
+    "ConfifyWarning",
+    "ConfifyOptions",
+    "parse",
+    "config_dump_yaml",
+    "read_config_from_argv",
+    "read_config_from_cli",
+    "parse_yaml",
+    "config_dump",
+    "read_yaml",
+]

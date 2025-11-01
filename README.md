@@ -140,7 +140,7 @@ There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For ex
 5. `float`
 6. `str`
 
-So `"null"` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to input `"\"null\""` with quotes. 
+So `"null"` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to input `"\"null\""` with quotes.
 
 #### Dataclasses Subclassing
 If the type incidated by `$type` is a subclass of the annotated type, we use the constructor of `$type`. Otherwise, a warning will be issued, and the object will be constructed using the annotated type. We raise an exception if the value contains extra fields or missing fields (of the constructor).

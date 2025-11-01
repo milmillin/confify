@@ -30,7 +30,7 @@ env/
 .env
 
 # IDE-specific files
-# .vscode/
+.vscode/
 .idea/
 
 # Logs and databases

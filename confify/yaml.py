@@ -1,4 +1,4 @@
-from typing import Any, Union, Type, Optional, List, Tuple, Dict, get_origin, Literal, get_args
+from typing import Any, Union, Type, Optional, List, Tuple, Dict, get_origin, Literal, get_args, Iterable
 from enum import Enum
 import yaml
 from pathlib import Path
@@ -11,7 +11,7 @@ class ConfifyDumper(yaml.SafeDumper):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def represent_list(self, data: list) -> Any:
+    def represent_list(self, data: Iterable[Any]) -> Any:
         return self.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
 
     def represent_tuple(self, data: tuple) -> Any:
