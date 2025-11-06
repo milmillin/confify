@@ -33,7 +33,7 @@ import ast
 from .base import ConfifyParseError, _warning, ConfifyOptions
 from .yaml import ConfifyDumper, ConfifyLoader
 from .utils import classname, import_string
-from .schema import _UnresolvedString, _ParseWarningEntry, _ParseResult, Schema
+from .schema import UnresolvedString, _ParseWarningEntry, _ParseResult, Schema
 
 _T = TypeVar("_T")
 
@@ -128,7 +128,7 @@ def read_config_from_argv(Config: Type[_T], argv: list[str], options: Optional[C
             value = read_yaml(value)
         elif key.startswith(options.prefix):
             key = key[len(options.prefix) :]
-            value = _UnresolvedString(value)
+            value = UnresolvedString(value)
         else:
             raise ValueError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
         _insert_dict(args, key.split(".") if key else [], value)

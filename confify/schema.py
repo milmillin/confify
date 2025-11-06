@@ -29,7 +29,7 @@ from .utils import classname_of_cls, import_string
 _TypeFormT = Any
 
 
-class _UnresolvedString:
+class UnresolvedString:
     def __init__(self, value: str):
         self.value = value
 
@@ -39,7 +39,24 @@ class _UnresolvedString:
     def __str__(self):
         return self.value
 
-    def resolve_as_sequence(self) -> list["_UnresolvedString"]:
+    def resolve_as_any(self, options: ConfifyOptions = ConfifyOptions.get_default()) -> Any:
+        s = self.value
+        s = s.strip()
+        if s[0] == "[" and s[-1] == "]":
+            return [x.resolve_as_any() for x in self.resolve_as_sequence()]
+        elif s[0] == "(" and s[-1] == ")":
+            return tuple(x.resolve_as_any() for x in self.resolve_as_sequence())
+        elif (s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'"):
+            return ast.literal_eval(s)
+        else:
+            for schema in [_none_schema, _bool_schema, _int_schema, _float_schema]:
+                try:
+                    return schema.parse(self)
+                except ConfifyParseError:
+                    pass
+            return s
+
+    def resolve_as_sequence(self) -> list["UnresolvedString"]:
         s = self.value
         s = s.strip()
         if not ((s[0] == "[" and s[-1] == "]") or (s[0] == "(" and s[-1] == ")")):
@@ -87,13 +104,13 @@ class _UnresolvedString:
         res.append(last.strip())
         if len(res) == 1 and res[0] == "":
             return []
-        return [_UnresolvedString(r) for r in res]
+        return [UnresolvedString(r) for r in res]
 
     @classmethod
     def sanitize(cls, d: Any) -> Any:
         """Recursively resolve all _UnresolvedString in d."""
-        if isinstance(d, _UnresolvedString):
-            return d.value
+        if isinstance(d, UnresolvedString):
+            return d.resolve_as_any()
         elif isinstance(d, dict):
             return {k: cls.sanitize(v) for k, v in d.items()}
         elif isinstance(d, list):
@@ -238,7 +255,7 @@ class StrSchema(Schema):
         return "Str"
 
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
-        if isinstance(d, _UnresolvedString):
+        if isinstance(d, UnresolvedString):
             d = d.value
             if (d.startswith('"') and d.endswith('"')) or (d.startswith("'") and d.endswith("'")):
                 return _ParseResult(ast.literal_eval(d))
@@ -255,7 +272,7 @@ class IntSchema(Schema):
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
         if isinstance(d, int) and not isinstance(d, bool):
             return _ParseResult(d)
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             try:
                 return _ParseResult(int(d.value))
             except ValueError:
@@ -272,7 +289,7 @@ class FloatSchema(Schema):
             return _ParseResult(d)
         elif isinstance(d, int):
             return _ParseResult(float(d))
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             try:
                 return _ParseResult(float(d.value))
             except ValueError:
@@ -287,7 +304,7 @@ class BoolSchema(Schema):
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
         if isinstance(d, bool):
             return _ParseResult(d)
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             d = d.value.strip().lower()
             if d in ["true", "on", "yes"]:
                 return _ParseResult(True)
@@ -303,11 +320,18 @@ class NoneSchema(Schema):
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
         if d is None:
             return _ParseResult(None)
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             d = d.value.strip().lower()
             if d in ["null", "~", "none"]:
                 return _ParseResult(None)
         self.raise_parse_error(d, prefix)
+
+
+# Value schemas
+_none_schema = NoneSchema(None)
+_bool_schema = BoolSchema(bool)
+_int_schema = IntSchema(int)
+_float_schema = FloatSchema(float)
 
 
 class PathSchema(Schema):
@@ -319,7 +343,7 @@ class PathSchema(Schema):
             return _ParseResult(d)
         elif isinstance(d, str):
             return _ParseResult(Path(d))
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             return _ParseResult(Path(d.value))
         self.raise_parse_error(d, prefix)
 
@@ -329,8 +353,7 @@ class AnySchema(Schema):
         return "Any"
 
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
-        # TODO: automatically convert to correct type
-        return _ParseResult(_UnresolvedString.sanitize(d))
+        return _ParseResult(UnresolvedString.sanitize(d))
 
 
 class EnumSchema(Schema):
@@ -349,7 +372,7 @@ class EnumSchema(Schema):
                 return _ParseResult(self.EnumType[d])
             except KeyError:
                 self.raise_parse_error(d, prefix, f"Invalid enum value: {d}")
-        elif isinstance(d, _UnresolvedString):
+        elif isinstance(d, UnresolvedString):
             d = d.value.strip()
             try:
                 return _ParseResult(self.EnumType[d])
@@ -420,7 +443,7 @@ class ListSchema(Schema):
         return f"List\n{indent_str}- $items: {self.val_schema._repr(indent + 2)}"
 
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
-        if isinstance(d, _UnresolvedString):
+        if isinstance(d, UnresolvedString):
             try:
                 elems = d.resolve_as_sequence()
             except ValueError as e:
@@ -453,7 +476,7 @@ class TupleSchema(Schema):
         return str_[:-1]
 
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
-        if isinstance(d, _UnresolvedString):
+        if isinstance(d, UnresolvedString):
             try:
                 elems = d.resolve_as_sequence()
             except ValueError as e:

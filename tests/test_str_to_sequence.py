@@ -1,10 +1,10 @@
 import pytest
 
-from confify.parser import _UnresolvedString
+from confify.schema import UnresolvedString
 
 
 def _str_to_sequence(s: str) -> list[str]:
-    return [v.value for v in _UnresolvedString(s).resolve_as_sequence()]
+    return [v.value for v in UnresolvedString(s).resolve_as_sequence()]
 
 
 def test():
