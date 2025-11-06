@@ -121,6 +121,44 @@ You can load the entire configuration from a YAML file by specifying the key as 
 python example.py --- base_config.yaml
 ```
 
+### Configuration Options
+
+Confify behavior can be customized using `ConfifyOptions`. You can either pass options to individual functions or set global defaults.
+
+```python
+from confify import ConfifyOptions, parse, read_config_from_cli
+
+# Method 1: Pass options to individual functions
+options = ConfifyOptions(
+    ignore_extra_fields=True,
+    strict_subclass_check=True
+)
+config = parse(data, MyConfig, options=options)
+
+# Method 2: Set global defaults for all subsequent calls
+ConfifyOptions.set_default(ConfifyOptions(
+    ignore_extra_fields=True,
+    strict_subclass_check=False
+))
+config = read_config_from_cli(MyConfig)  # Uses global defaults
+```
+
+#### Option Reference
+
+- **`prefix`** (default: `"--"`): Prefix for CLI arguments. Keys starting with this prefix are treated as configuration fields. Example: `--model.name value`
+
+- **`yaml_prefix`** (default: `"---"`): Prefix for loading YAML files from CLI. Keys starting with this prefix treat the value as a file path to load. Example: `---encoder config.yaml`
+
+- **`type_key`** (default: `"$type"`): Special dictionary key for polymorphic type resolution. When present in input data, specifies the actual class to use (must be a fully qualified name like `module.ClassName`). See [Dataclasses Subclassing](#dataclasses-subclassing) for details.
+
+- **`ignore_extra_fields`** (default: `False`): Controls behavior when extra/unknown fields are present in dataclasses or TypedDict:
+  - `False`: Raises an error if extra fields are found (strict validation)
+  - `True`: Issues a warning and ignores extra fields (lenient validation)
+
+- **`strict_subclass_check`** (default: `False`): Controls validation when using `type_key` to specify a different class:
+  - `False`: Issues a warning if the specified class is not a subclass, but continues parsing
+  - `True`: Raises an error if the specified class is not a proper subclass
+
 ### Type Resolution
 
 Arguments from CLI are converted to the annotated type using the following rule:
@@ -206,7 +244,88 @@ python example.py --values '(1,2,abc)'  # → (1, 2, "abc")
 ```
 
 #### Dataclasses Subclassing
-If the type incidated by `$type` is a subclass of the annotated type, we use the constructor of `$type`. Otherwise, a warning will be issued, and the object will be constructed using the annotated type. We raise an exception if the value contains extra fields or missing fields (of the constructor).
+
+Confify supports polymorphic types through the `type_key` field (default: `"$type"`). This allows you to specify a different class than the one declared in the type annotation, enabling runtime polymorphism.
+
+**How it works:**
+
+1. When parsing a dictionary into a dataclass or TypedDict, confify checks for the `type_key` field
+2. If present, the value must be a fully qualified class name (e.g., `"my.module.MyClass"`)
+3. The specified class is dynamically loaded and used instead of the annotated type
+4. The behavior depends on the `strict_subclass_check` option:
+   - **`strict_subclass_check=False`** (default): If the specified class is not a subclass, issues a warning but continues
+   - **`strict_subclass_check=True`**: If the specified class is not a subclass, raises an error
+
+**Example:**
+
+```python
+from dataclasses import dataclass
+from confify import read_config_from_cli, ConfifyOptions
+
+@dataclass
+class BaseEncoder:
+    depth: int
+
+@dataclass
+class TransformerEncoder(BaseEncoder):
+    num_heads: int
+
+@dataclass
+class Config:
+    encoder: BaseEncoder
+
+# In YAML or CLI, specify the actual type:
+# encoder:
+#   $type: my.module.TransformerEncoder
+#   depth: 6
+#   num_heads: 8
+
+# With strict checking enabled
+options = ConfifyOptions(strict_subclass_check=True)
+config = read_config_from_cli(Config, options=options)
+# Now config.encoder is a TransformerEncoder instance
+```
+
+**Command-line usage:**
+
+```bash
+# Using YAML file with $type
+python example.py ---encoder encoder.yaml
+
+# Or inline (though less practical):
+python example.py --encoder.\$type my.module.TransformerEncoder --encoder.depth 6 --encoder.num_heads 8
+```
+
+**Note:** When dumping configs with `config_dump_yaml()`, the `$type` field is automatically added to preserve the actual class information.
+
+#### Handling Extra Fields
+
+By default, confify performs strict validation and raises an error if the input contains fields that don't exist in the dataclass or TypedDict definition. You can control this behavior using the `ignore_extra_fields` option.
+
+**Example:**
+
+```python
+from dataclasses import dataclass
+from confify import parse, ConfifyOptions
+
+@dataclass
+class Config:
+    name: str
+    value: int
+
+# This will raise an error due to extra field 'extra'
+data = {"name": "test", "value": 42, "extra": "field"}
+
+# Option 1: Raises ConfifyParseError
+config = parse(data, Config)  # Error: Got extra fields: extra
+
+# Option 2: Issues warning and ignores extra field
+options = ConfifyOptions(ignore_extra_fields=True)
+config = parse(data, Config, options=options)  # Warning issued, but succeeds
+# config = Config(name="test", value=42)
+```
+
+This applies to both dataclasses and TypedDict. Missing required fields always raise an error regardless of this option.
 
 #### YAML
 Values loaded from YAML usually have the correct type, except for type `Union[Enum, str]` where the value will always be converted to a matching `Enum`.
