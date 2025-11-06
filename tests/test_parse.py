@@ -7,7 +7,7 @@ from typing import List, Union, Optional, Tuple, Literal, TypedDict, NotRequired
 from enum import Enum
 
 
-from confify.parser import _parse, ConfifyParseError, _UnresolvedString
+from confify.parser import _parse, ConfifyParseError, UnresolvedString
 
 
 def _assert_bool_equals(x, y: bool):
@@ -16,11 +16,11 @@ def _assert_bool_equals(x, y: bool):
 
 
 def _parseu(s: str, cls):
-    return _parse(_UnresolvedString(s), cls)
+    return _parse(UnresolvedString(s), cls)
 
 
 def U(s: str):
-    return _UnresolvedString(s)
+    return UnresolvedString(s)
 
 
 ################################################################################
@@ -329,13 +329,14 @@ def test_untyped_list_from_list():
 def test_untyped_list_from_str():
     for t in [list, List]:
         assert _parseu("[]", t) == []
-        assert _parseu("[1, 2, 3]", t) == ["1", "2", "3"]
-        assert _parseu("[1, 2, 3, (1, 2, 3)]", t) == ["1", "2", "3", "(1, 2, 3)"]
-        assert _parseu("[1, a, False, None]", t) == ["1", "a", "False", "None"]
+        assert _parseu("[1, 2, 3]", t) == [1, 2, 3]
+        assert _parseu("[1, 2, 3, (1, 2, 3)]", t) == [1, 2, 3, (1, 2, 3)]
+        assert _parseu("[1, a, False, None]", t) == [1, "a", False, None]
         assert _parseu("()", t) == []
-        assert _parseu("(1, 2, 3)", t) == ["1", "2", "3"]
-        assert _parseu("(1, 2, 3, (1, 2, 3))", t) == ["1", "2", "3", "(1, 2, 3)"]
-        assert _parseu("(1, a, False, None)", t) == ["1", "a", "False", "None"]
+        assert _parseu("(1, 2, 3)", t) == [1, 2, 3]
+        assert _parseu("(1, 2, 3, (1, 2, 3))", t) == [1, 2, 3, (1, 2, 3)]
+        assert _parseu("(1, 2, 3, [1, 2, 3])", t) == [1, 2, 3, [1, 2, 3]]
+        assert _parseu("(1, a, False, None)", t) == [1, "a", False, None]
 
 
 def test_untyped_tuple_from_list():
@@ -353,13 +354,14 @@ def test_untyped_tuple_from_list():
 def test_untyped_tuple_from_str():
     for t in [tuple, Tuple]:
         assert _parseu("[]", t) == ()
-        assert _parseu("[1, 2, 3]", t) == ("1", "2", "3")
-        assert _parseu("[1, 2, 3, (1, 2, 3)]", t) == ("1", "2", "3", "(1, 2, 3)")
-        assert _parseu("[1, a, False, None]", t) == ("1", "a", "False", "None")
+        assert _parseu("[1, 2, 3]", t) == (1, 2, 3)
+        assert _parseu("[1, 2, 3, (1, 2, 3)]", t) == (1, 2, 3, (1, 2, 3))
+        assert _parseu("[1, a, False, None]", t) == (1, "a", False, None)
         assert _parseu("()", t) == ()
-        assert _parseu("(1, 2, 3)", t) == ("1", "2", "3")
-        assert _parseu("(1, 2, 3, (1, 2, 3))", t) == ("1", "2", "3", "(1, 2, 3)")
-        assert _parseu("(1, a, False, None)", t) == ("1", "a", "False", "None")
+        assert _parseu("(1, 2, 3)", t) == (1, 2, 3)
+        assert _parseu("(1, 2, 3, (1, 2, 3))", t) == (1, 2, 3, (1, 2, 3))
+        assert _parseu("(1, 2, 3, [1, 2, 3])", t) == (1, 2, 3, [1, 2, 3])
+        assert _parseu("(1, a, False, None)", t) == (1, "a", False, None)
 
 
 def test_typed_list_from_list():
