@@ -44,7 +44,10 @@ Thumbs.db
 pgadmin_data/
 
 
+scratch.py
 scratch.ipynb
 arg_test.py
 
 .pytest_cache/
+
+examples/_generated/

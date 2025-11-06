@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import (
     TypeVar,
     Type,
@@ -18,10 +18,16 @@ from typing import (
 from pathlib import Path
 import itertools
 import sys
+from enum import Enum
+import json
+import shlex
+from abc import abstractmethod, ABC
+import shutil
 
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
 from .schema import Schema, DictSchema, MappingSchema
 from .parser import read_yaml, UnresolvedString, parse
+from .utils import classname_of_cls, classname
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -33,18 +39,18 @@ T1 = TypeVar("T1")
 class ConfigDuckTyped:
     def __init__(self, schema: Schema, prefixes: list[str]):
         self.prefixes = list(prefixes)
-        self.schema = schema
+        self._schema_ = schema
 
     def get_dotnotation(self) -> str:
         return ".".join(self.prefixes)
 
     def __getattr__(self, name: str) -> "ConfigDuckTyped":
-        if isinstance(self.schema, DictSchema):
-            if name in self.schema.required_fields:
-                return ConfigDuckTyped(self.schema.required_fields[name], self.prefixes + [name])
-            elif name in self.schema.optional_fields:
-                return ConfigDuckTyped(self.schema.optional_fields[name], self.prefixes + [name])
-        raise ConfifyBuilderError(f"Cannot access field `{name}` in `{self.schema.annotation}`")
+        if isinstance(self._schema_, DictSchema):
+            if name in self._schema_.required_fields:
+                return ConfigDuckTyped(self._schema_.required_fields[name], self.prefixes + [name])
+            elif name in self._schema_.optional_fields:
+                return ConfigDuckTyped(self._schema_.optional_fields[name], self.prefixes + [name])
+        raise ConfifyBuilderError(f"Cannot access field `{name}` in `{self._schema_.annotation}`")
 
 
 # endregion
@@ -52,11 +58,18 @@ class ConfigDuckTyped:
 # region DSL
 
 
+# Template String
+class L(str): ...
+
+
 class SetRecord(Generic[T]):
     def __init__(self, duck_typed: ConfigDuckTyped, value: Any, *, from_yaml: bool = False):
         self.duck_typed = duck_typed
         self.value = value
         self.from_yaml = from_yaml
+        if not isinstance(value, L):
+            # TODO: pass options
+            self.duck_typed._schema_.parse(value)
 
     def __repr__(self):
         return f"{self.duck_typed.get_dotnotation()} = {self.value}"
@@ -114,11 +127,11 @@ class SetType(Generic[T]):
     def __call__(
         self, as_: Union[As[T], AsWithStatements[T]]
     ) -> Union[SetTypeRecord[T], SetTypeRecordWithStatements[T]]:
-        if not isinstance(self.duck_typed.schema, (DictSchema)):
+        if not isinstance(self.duck_typed._schema_, (DictSchema)):
             raise ConfifyBuilderError(f"Only dict type can be set to a type")
         to_type = as_.to_type
-        if not issubclass(to_type, self.duck_typed.schema.BaseClass):
-            raise ConfifyBuilderError(f"`{to_type}` is not a subtype of `{self.duck_typed.schema.BaseClass}`")
+        if not issubclass(to_type, self.duck_typed._schema_.BaseClass):
+            raise ConfifyBuilderError(f"`{to_type}` is not a subtype of `{self.duck_typed._schema_.BaseClass}`")
         if isinstance(as_, As):
             return SetTypeRecord(self.duck_typed, to_type)
         elif isinstance(as_, AsWithStatements):
@@ -140,7 +153,7 @@ class Sweep:
             self.sweeps = dict(sweeps)
 
 
-PureConfigStatements = Sequence[Union[SetRecord[Any], SetTypeRecord[Any]]]
+PureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any]]]
 ConfigStatements = Sequence[Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any]]]
 
 
@@ -179,6 +192,150 @@ def execute(stmts: ConfigStatements, base_name: str) -> Iterable[NamedPureConfig
 
 
 # endregion
+
+
+# region Compilation
+
+
+def compile_to_config(stmts: PureConfigStatements, schema: Schema, options: ConfifyOptions) -> Any:
+    res: dict[str, Any] = {}
+    for stmt in stmts:
+        if isinstance(stmt, SetRecord):
+            if stmt.from_yaml:
+                value = read_yaml(stmt.value)
+            else:
+                value = stmt.value
+            _insert_dict(res, stmt.duck_typed.prefixes, value)
+        elif isinstance(stmt, SetTypeRecord):
+            _insert_dict(res, stmt.duck_typed.prefixes + [options.type_key], classname_of_cls(stmt.to_type))
+        else:
+            raise ConfifyBuilderError(f"Invalid statement: {stmt}")
+    return schema.parse(res, options)
+
+
+def _stringify_impl(v: Any, is_root: bool = True) -> str:
+    if isinstance(v, (str, Path)):
+        s = json.dumps(str(v))
+        if is_root:
+            return s[1:-1]
+        else:
+            return s
+    elif isinstance(v, (bool, int, float)) or v is None:
+        return str(v)
+    elif isinstance(v, Enum):
+        return v.name
+    elif isinstance(v, list):
+        return "[" + ", ".join([_stringify_impl(e) for e in v]) + "]"
+    elif isinstance(v, tuple):
+        return "(" + ", ".join([_stringify_impl(e) for e in v]) + ")"
+    else:
+        raise ValueError(f"Unsupported type: {type(v)}")
+
+
+def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
+    if isinstance(v, (str, Path, bool, int, float, Enum, list, tuple)):
+        return [f"{options.prefix}{prefix}", _stringify_impl(v)]
+    elif isinstance(v, dict):
+        res: list[str] = []
+        for k, v in v.items():
+            res.extend(_any_to_args(v, options, f"{prefix}.{k}"))
+        return res
+    elif is_dataclass(v):
+        res: list[str] = []
+        res.extend([f"{options.prefix}{prefix}.{options.type_key}", classname(v)])
+        for f in fields(v):
+            res.extend(_any_to_args(getattr(v, f.name), options=options, prefix=f"{prefix}.{f.name}"))
+        return res
+    else:
+        raise ConfifyBuilderError(f"Invalid type: {type(v)}")
+
+
+def compile_to_args(
+    stmts: PureConfigStatements,
+    name: str,
+    options: ConfifyOptions,
+    lstr_kwargs: dict[str, str] = {},
+    shell_escape: bool = True,
+) -> list[str]:
+    args: list[str] = []
+    for stmt in stmts:
+        if isinstance(stmt, SetRecord):
+            dotnotation = stmt.duck_typed.get_dotnotation()
+            if stmt.from_yaml:
+                args.append(f"{options.yaml_prefix}{dotnotation}")
+                args.append(stmt.value)
+            else:
+                if isinstance(stmt.value, L):
+                    args.append(f"{options.prefix}{dotnotation}")
+                    args.append(stmt.value.format(name=name, **lstr_kwargs))
+                else:
+                    args.extend(_any_to_args(stmt.value, options=options, prefix=dotnotation))
+        elif isinstance(stmt, SetTypeRecord):
+            args.extend(
+                [
+                    f"{options.prefix}{stmt.duck_typed.get_dotnotation()}.{options.type_key}",
+                    classname_of_cls(stmt.to_type),
+                ]
+            )
+        else:
+            raise ConfifyBuilderError(f"Invalid statement: {stmt}")
+    if shell_escape:
+        args = [shlex.quote(arg) for arg in args]
+    return args
+
+
+# endregion
+
+# region Exporter
+
+
+class ConfifyExporterConfig:
+    shell_escape: bool = True
+
+
+class ConfifyExporter:
+    config: ClassVar[ConfifyExporterConfig] = ConfifyExporterConfig()
+
+    def pre_run(self, generator_name: str) -> dict[str, str]:
+        return {}
+
+    @abstractmethod
+    def run(self, generator_name: str, run_name: str, args: list[str], lstr_kwargs: dict[str, str]): ...
+
+    def post_run(self, generator_name: str):
+        pass
+
+
+class ShellExporter(ConfifyExporter):
+    def pre_run(self, generator_name: str) -> dict[str, str]:
+        this_fn = Path(sys.argv[0]).stem
+        output_dir = Path("_generated") / f"{this_fn}_{generator_name}"
+        shutil.rmtree(output_dir, ignore_errors=True)
+        return {}
+
+    def run(self, generator_name: str, run_name: str, args: list[str], lstr_kwargs: dict[str, str]):
+        assert len(args) % 2 == 0
+        args = [f"{k} {v}" for k, v in zip(args[::2], args[1::2])]
+        args_str = " \\\n    ".join(args)
+
+        sh = f"""#!/bin/bash
+
+python {sys.argv[0]} \\
+    {args_str}
+"""
+
+        this_fn = Path(sys.argv[0]).stem
+        output_dir = Path("_generated") / f"{this_fn}_{generator_name}"
+        output_dir.mkdir(exist_ok=True, parents=True)
+        out_fn = output_dir / f"{run_name}.sh"
+        out_fn.write_text(sh)
+        out_fn.chmod(0o755)
+
+        print(out_fn)
+
+
+# endregion
+
 
 # region CLI
 
@@ -242,11 +399,17 @@ def read_config_from_cli(Config: Type[T], options: Optional[ConfifyOptions] = No
 class Confify(Generic[T]):
     main_fn: Optional[Callable[[T], Any]] = None
     gen_fns: dict[str, Callable[[T], ConfigStatements]] = {}
+    # kwargs, fn
+    exporter_fns: dict[str, ConfifyExporter] = {}
 
     def __init__(self, Config: Type[T], options: Optional[ConfifyOptions] = None):
         self.Config = Config
         self.options = options or ConfifyOptions.get_default()
         self.schema = Schema.from_typeform(Config)
+        self.duck_typed = cast(T, ConfigDuckTyped(self.schema, []))
+
+        # Add default exporter
+        self.exporter_fns["shell"] = ShellExporter()
 
     def main(self):
         """
@@ -270,29 +433,74 @@ class Confify(Generic[T]):
                 return self.main_fn(config)
             except ConfifyParseError as e:
                 print(e)
+        elif argv[0] in ["l", "ls", "list"]:
+            # Run generator
+            not_found: list[str] = []
+            for generator_name in argv[1:]:
+                if generator_name not in self.gen_fns:
+                    not_found.append(generator_name)
+            if len(not_found) > 0:
+                raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
+            for generator_name in argv[1:]:
+                prog = self.gen_fns[generator_name](self.duck_typed)
+                stmtss = execute(prog, base_name=generator_name)
+                for stmts in stmtss:
+                    print(stmts.name)
         elif argv[0] in ["g", "gen", "generate"]:
             # Run generator
             not_found: list[str] = []
-            for name in argv[1:]:
-                if name not in self.gen_fns:
-                    not_found.append(name)
+            for generator_name in argv[2:]:
+                if generator_name not in self.gen_fns:
+                    not_found.append(generator_name)
             if len(not_found) > 0:
                 raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
-            duck_typed = cast(T, ConfigDuckTyped(self.schema, []))
-            for name in argv[1:]:
-                prog = self.gen_fns[name](duck_typed)
-                configs = execute(prog, base_name=name)
-                for config in configs:
-                    print(config.name)
-                    print(config.stmts)
-                    print("--------")
 
+            if len(argv) < 2:
+                raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name> ...`")
+
+            exporter_name = argv[1]
+            if exporter_name not in self.exporter_fns:
+                raise ConfifyCLIError(f"Exporter not found: {exporter_name}")
+            exporter = self.exporter_fns[exporter_name]
+
+            shell_escape = exporter.config.shell_escape
+
+            cnt = 0
+            for generator_name in argv[2:]:
+                lstr_kwargs = exporter.pre_run(generator_name)
+                prog = self.gen_fns[generator_name](self.duck_typed)
+                stmtss = execute(prog, base_name=generator_name)
+                for stmts in stmtss:
+                    args = compile_to_args(
+                        stmts.stmts, stmts.name, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs
+                    )
+                    exporter.run(generator_name, stmts.name, args, lstr_kwargs)
+                    cnt += 1
+                exporter.post_run(generator_name)
+
+            print(f"\nExported {cnt} configs.")
+        elif argv[0] in ["r", "run"]:
+            if not len(argv) == 2:
+                raise ConfifyCLIError("Invalid arguments. Expected `run <config-name>`")
+            run_name = argv[1]
+            config = None
+            for gen_name, gen_fn in self.gen_fns.items():
+                if run_name.startswith(gen_name):
+                    prog = gen_fn(self.duck_typed)
+                    stmtss = execute(prog, base_name=gen_name)
+                    for stmts in stmtss:
+                        if stmts.name == run_name:
+                            config = compile_to_config(stmts.stmts, self.schema, self.options)
+                            break
+            if config is None:
+                raise ConfifyCLIError(f"Config not found: {run_name}.")
+            return self.main_fn(config)
         else:
             # TODO: print help
             print("Help")
             pass
 
-    def gen(self, name: Optional[str] = None):
+    def generator(self, name: Optional[str] = None):
         """
         Decorator to set a generator function.
         """
@@ -305,6 +513,12 @@ class Confify(Generic[T]):
             return f
 
         return decorator
+
+    def register_exporter(self, name: str, exporter: ConfifyExporter):
+        """
+        Register an exporter function.
+        """
+        self.exporter_fns[name] = exporter
 
 
 # endregion

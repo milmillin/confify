@@ -8,16 +8,7 @@ from .parser import (
     config_dump,
     read_yaml,
 )
-from .cli import (
-    read_config_from_argv,
-    read_config_from_cli,
-    Confify,
-    ConfigStatements,
-    Set,
-    Sweep,
-    SetType,
-    As,
-)
+from .cli import read_config_from_argv, read_config_from_cli, Confify, ConfigStatements, Set, Sweep, SetType, As, L
 
 __all__ = [
     "__version__",
@@ -37,4 +28,5 @@ __all__ = [
     "Sweep",
     "SetType",
     "As",
+    "L",
 ]
