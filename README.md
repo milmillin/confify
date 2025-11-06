@@ -7,7 +7,7 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 - Uses type annotations from `dataclass` and `TypedDict`.
 - Uses dotlist notations for CLI arguments. (e.g., `--encoder.depth 6`, `--model.hidden_dims '(10, 20)'`)
 - Loads partial configurations from YAML in CLI arguments. (e.g., `---encoder encoder.yaml`)
-- Supports subclassing of `dataclass` by specifying the classname. (e.g., `--encoder.$type mymodule.MyEncoder`)
+- Supports subclassing of `dataclass` by specifying the classname. (e.g., `--encoder.\$type mymodule.MyEncoder`)
 - Supports `Optional`, `Union`, `Literal`.
 - Has minimal dependencies (only `PyYaml`).
 
@@ -56,7 +56,7 @@ We use dotlist notations for CLI arguments. See examples below.
 ```bash
 python example.py \
     --encoder.depth 6 \
-    --encoder.ch_mult \(3,4\) \
+    --encoder.ch_mult '(3,4)' \
     --encoder.activation_fn silu \
     --encoder.augment_type None \
     --save_path ~/experiments/exp1 \
@@ -126,12 +126,14 @@ python example.py --- base_config.yaml
 Arguments from CLI are converted to the annotated type using the following rule:
 
 - `int`, `float`, `Path`: we use default constructors.
-- `bool`: we convert case-insensitive `"true"`, `"on"`, `"yes"` to `True`, and `"false"`, `"off"`, `"no"` to `False`.
+- `bool`: we convert case-insensitive `true`, `on`, `yes` to `True`, and `false`, `off`, `no` to `False`.
 - `str`: if the value is surrounded by quotes, we use `ast.literal_eval` to convert it to a string. Otherwise, we use the value as is.
-- `None`: we convert case-insensitive `"null"`, `"~"`, `"none"` to `None`.
+- `None`: we convert case-insensitive `null`, `~`, `none` to `None`.
 - `Enum`: we find the enum entry with the same name.
 
-There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For example, if a user input `"null"` for type `Union[str, None]`, it can be interpreted as either `None` or a string `"null"`. We follow the following order and returns the first that succeeds:
+#### Handling `Union`, `Optional`, `Literal` Type
+
+There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For example, if a user input `null` for type `Union[str, None]`, it can be interpreted as either `None` or a string `"null"`. We follow the following order and returns the first that succeeds:
 
 1. Types not listed below (from left to right)
 2. `None`
@@ -140,7 +142,68 @@ There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For ex
 5. `float`
 6. `str`
 
-So `"null"` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to input `"\"null\""` with quotes.
+So `null` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to explicitly surround it with quotes (e.g., `python example.py '"null"'`).
+
+#### Handling `Any` Type
+
+When a field has type `Any` or when unparameterized collections are used (see below), confify automatically infers the appropriate type from CLI string inputs using the following order:
+
+1. **Sequences**: `[1,2,3]` → `list`, `(1,2,3)` → `tuple` (recursively inferred)
+2. **Quoted strings**: `"abc"` or `'abc'` → `str` (quotes removed via `ast.literal_eval`)
+3. **None**: case-insensitive `null`, `~`, `none` → `None`
+4. **bool**: case-insensitive `true`, `on`, `yes` → `True`; `false`, `off`, `no` → `False`
+5. **int**: numeric values without decimals → `int`
+6. **float**: numeric values with decimals or scientific notation → `float`
+7. **str**: anything else → `str`
+
+Example:
+
+```python
+@dataclass
+class Config:
+    value: Any
+```
+
+```bash
+# Inferred as int
+python example.py --value 42  # → 42 (int)
+
+# Inferred as list of ints
+python example.py --value '[1,2,3]'  # → [1, 2, 3] (list[int])
+
+# Inferred as bool
+python example.py --value true  # → True (bool)
+
+# Force string with quotes
+python example.py --value '"42"'  # → "42" (str)
+```
+
+#### Unparameterized Collection Types
+
+Collections without type parameters automatically use `Any` for their elements:
+- `list` is equivalent to `list[Any]`
+- `tuple` is equivalent to `tuple[Any, ...]` (variable-length)
+- `dict` is equivalent to `dict[str, Any]`
+
+Elements in these collections benefit from automatic type inference:
+
+```python
+@dataclass
+class Config:
+    items: list  # unparameterized list
+    values: tuple  # unparameterized tuple
+```
+
+```bash
+# Each element is automatically inferred
+python example.py --items '[1,abc,True,null]'  # → [1, "abc", True, None]
+
+# Nested sequences preserve their types
+python example.py --items '[1,[2,3],abc]'  # → [1, [2, 3], "abc"]
+
+# Tuples work the same way
+python example.py --values '(1,2,abc)'  # → (1, 2, "abc")
+```
 
 #### Dataclasses Subclassing
 If the type incidated by `$type` is a subclass of the annotated type, we use the constructor of `$type`. Otherwise, a warning will be issued, and the object will be constructed using the annotated type. We raise an exception if the value contains extra fields or missing fields (of the constructor).
@@ -153,7 +216,7 @@ Values loaded from YAML usually have the correct type, except for type `Union[En
 
 ### Supported types
 
-`int`, `float`, `bool`, `str`, `None`, `Path`, `list`, `tuple`, `dict`, `Enum`, `dataclass`, `Union`, `Literal`, `TypedDict`
+`int`, `float`, `bool`, `str`, `None`, `Path`, `Any`, `list`, `tuple`, `dict`, `Iterable`, `Sequence`, `Enum`, `dataclass`, `Union`, `Literal`, `TypedDict`
 
 ## Limitations and Known Issues
 
