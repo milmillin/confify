@@ -18,6 +18,10 @@ class ConfifyWarning(UserWarning):
     pass
 
 
+class ConfifyBuilderError(ConfifyError):
+    pass
+
+
 @dataclass
 class ConfifyOptions:
     prefix: str = "--"

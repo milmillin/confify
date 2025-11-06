@@ -22,7 +22,7 @@ from dataclasses import fields, is_dataclass, MISSING, dataclass, field
 from inspect import isclass
 import ast
 
-from .base import ConfifyTypeError, ConfifyOptions, _warning, ConfifyParseError
+from .base import ConfifyTypeError, ConfifyOptions, _warning, ConfifyParseError, ConfifyBuilderError
 from .utils import classname_of_cls, import_string
 
 # Wait for PEP 747
@@ -247,7 +247,9 @@ class Schema(ABC):
         return res.value
 
     def raise_parse_error(self, d: Any, prefix: str, message: str = "") -> Never:
-        raise ConfifyParseError(f"Invalid data for type `{self.annotation}` at `{prefix}`. Got `{repr(d)}`. {message}")
+        raise ConfifyParseError(
+            f"Invalid data for type `{self.annotation}` at `{prefix}`. Got `{repr(d)}`.\n-> {message}"
+        )
 
 
 class StrSchema(Schema):

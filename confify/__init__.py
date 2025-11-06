@@ -4,11 +4,19 @@ from .base import ConfifyParseError, ConfifyWarning, ConfifyOptions
 from .parser import (
     parse,
     config_dump_yaml,
-    read_config_from_argv,
-    read_config_from_cli,
     parse_yaml,
     config_dump,
     read_yaml,
+)
+from .cli import (
+    read_config_from_argv,
+    read_config_from_cli,
+    Confify,
+    ConfigStatements,
+    Set,
+    Sweep,
+    SetType,
+    As,
 )
 
 __all__ = [
@@ -23,4 +31,10 @@ __all__ = [
     "parse_yaml",
     "config_dump",
     "read_yaml",
+    "Confify",
+    "ConfigStatements",
+    "Set",
+    "Sweep",
+    "SetType",
+    "As",
 ]
