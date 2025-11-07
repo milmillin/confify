@@ -10,7 +10,7 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 - Supports subclassing of `dataclass` by specifying the classname. (e.g., `--encoder.\$type mymodule.MyEncoder`)
 - Supports `Optional`, `Union`, `Literal`.
 - Has minimal dependencies (only `PyYaml`).
-- Supports **type-safe** configuration sweeps for hyperparameter search.
+- Supports **static-type-safe** configuration sweeps for hyperparameter search. (see [Configuration Sweeps](#configuration-sweeps))
 
 ## Installation
 
