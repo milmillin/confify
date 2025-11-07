@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import math
 from types import NoneType
 from pathlib import Path
-from typing import List, Union, Optional, Tuple, Literal, TypedDict, NotRequired
+from typing import Any, List, Union, Optional, Tuple, Literal, TypedDict, NotRequired
 from enum import Enum
 
 
@@ -776,3 +776,412 @@ def test_typeddict():
     assert _parse({"x1": 1, "x2": "2", "x3": C({"a": "a", "b": 1, "c": True})}, D) == D(
         {"x1": 1, "x2": "2", "x3": C({"a": "a", "b": 1, "c": True})}
     )
+
+
+################################################################################
+# Test Any Type
+################################################################################
+
+
+def test_any_basic_int_inference():
+    """Test integer type inference from UnresolvedString with Any."""
+    assert _parseu("42", Any) == 42
+    assert _parseu("-42", Any) == -42
+    assert _parseu("  42  ", Any) == 42
+    assert _parseu("0", Any) == 0
+    assert _parseu("-0", Any) == 0
+    assert _parseu("007", Any) == 7
+    assert _parseu("123456789", Any) == 123456789
+
+
+def test_any_basic_float_inference():
+    """Test float type inference from UnresolvedString with Any."""
+    assert _parseu("3.14", Any) == 3.14
+    assert _parseu("-3.14", Any) == -3.14
+    assert _parseu("0.0", Any) == 0.0
+    assert _parseu("-0.0", Any) == -0.0
+    assert _parseu("1e-5", Any) == 1e-5
+    assert _parseu("1.5e+10", Any) == 1.5e10
+    assert _parseu("1e5", Any) == 100000.0
+    assert _parseu("1.5e-3", Any) == 0.0015
+    assert _parseu("-1e-2", Any) == -1e-2
+    assert _parseu("1.25e-2", Any) == 1.25e-2
+
+
+def test_any_special_float_values():
+    """Test special float values (inf, nan) with Any."""
+    assert _parseu("inf", Any) == float("inf")
+    assert _parseu("-inf", Any) == float("-inf")
+    assert math.isnan(_parseu("nan", Any))
+    assert math.isnan(_parseu("NaN", Any))
+    assert math.isnan(_parseu("NAN", Any))
+
+
+def test_any_basic_bool_inference():
+    """Test bool type inference from UnresolvedString with Any."""
+    _assert_bool_equals(_parseu("True", Any), True)
+    _assert_bool_equals(_parseu("true", Any), True)
+    _assert_bool_equals(_parseu("TRUE", Any), True)
+    _assert_bool_equals(_parseu("yes", Any), True)
+    _assert_bool_equals(_parseu("Yes", Any), True)
+    _assert_bool_equals(_parseu("on", Any), True)
+    _assert_bool_equals(_parseu("False", Any), False)
+    _assert_bool_equals(_parseu("false", Any), False)
+    _assert_bool_equals(_parseu("FALSE", Any), False)
+    _assert_bool_equals(_parseu("no", Any), False)
+    _assert_bool_equals(_parseu("NO", Any), False)
+    _assert_bool_equals(_parseu("off", Any), False)
+
+
+def test_any_basic_none_inference():
+    """Test None type inference from UnresolvedString with Any."""
+    assert _parseu("null", Any) is None
+    assert _parseu("~", Any) is None
+    assert _parseu("None", Any) is None
+    assert _parseu("none", Any) is None
+    assert _parseu("Null", Any) is None
+    assert _parseu("NULL", Any) is None
+
+
+def test_any_string_inference_quoted():
+    """Test string inference with quoted strings for Any."""
+    assert _parseu('"hello"', Any) == "hello"
+    assert _parseu("'hello'", Any) == "hello"
+    assert _parseu('"42"', Any) == "42"  # Force string
+    assert _parseu('"True"', Any) == "True"  # Force string
+    assert _parseu('"null"', Any) == "null"  # Force string
+    assert _parseu('"false"', Any) == "false"  # Force string
+    assert _parseu('""', Any) == ""  # Empty string
+    assert _parseu("''", Any) == ""  # Empty string
+    assert _parseu('" "', Any) == " "  # Space string
+    assert _parseu('"  abc  "', Any) == "  abc  "  # Preserve whitespace
+
+
+def test_any_string_inference_unquoted():
+    """Test string inference with unquoted strings (fallback) for Any."""
+    assert _parseu("hello", Any) == "hello"
+    assert _parseu("abc123", Any) == "abc123"
+    assert _parseu("True123", Any) == "True123"  # Not a valid bool
+    assert _parseu("trueish", Any) == "trueish"  # Not "true"
+    assert _parseu("nullify", Any) == "nullify"  # Not "null"
+    assert _parseu("123abc", Any) == "123abc"  # Not valid int
+
+
+def test_any_string_escape_sequences():
+    """Test escape sequences in quoted strings for Any."""
+    assert _parseu('"hello\\nworld"', Any) == "hello\nworld"
+    assert _parseu('"a\\"b"', Any) == 'a"b'
+    assert _parseu('"a\\\\b"', Any) == "a\\b"
+    assert _parseu("'a\\'b'", Any) == "a'b"
+
+
+def test_any_sequences_list():
+    """Test list sequence inference from UnresolvedString with Any."""
+    assert _parseu("[]", Any) == []
+    assert _parseu("[1, 2, 3]", Any) == [1, 2, 3]
+    assert _parseu("[1, abc, True, null]", Any) == [1, "abc", True, None]
+    assert _parseu("[  ]", Any) == []  # Empty with whitespace
+    assert _parseu("[ 1 , 2 , 3 ]", Any) == [1, 2, 3]  # Whitespace handling
+
+
+def test_any_sequences_tuple():
+    """Test tuple sequence inference from UnresolvedString with Any."""
+    assert _parseu("()", Any) == ()
+    assert _parseu("(1, 2, 3)", Any) == (1, 2, 3)
+    assert _parseu("(1, abc, True, null)", Any) == (1, "abc", True, None)
+    assert _parseu("(  )", Any) == ()  # Empty with whitespace
+    assert _parseu("( 1 , 2 , 3 )", Any) == (1, 2, 3)  # Whitespace handling
+
+
+def test_any_sequences_nested():
+    """Test nested sequence inference with Any."""
+    assert _parseu("[[1, 2], [3, 4]]", Any) == [[1, 2], [3, 4]]
+    assert _parseu("[(1, 2), (3, 4)]", Any) == [(1, 2), (3, 4)]
+    assert _parseu("([1, 2], [3, 4])", Any) == ([1, 2], [3, 4])
+    assert _parseu("[[[1]]]", Any) == [[[1]]]
+    assert _parseu("[(1, [2, 3]), [4, (5, 6)]]", Any) == [(1, [2, 3]), [4, (5, 6)]]
+
+
+def test_any_sequences_mixed_types():
+    """Test sequences with mixed types inferred from strings for Any."""
+    assert _parseu("[1, 2.5, true, null, abc]", Any) == [1, 2.5, True, None, "abc"]
+    assert _parseu('["quoted", unquoted, 42]', Any) == ["quoted", "unquoted", 42]
+    assert _parseu("[1, 2.5, True, False, null, abc, [1, 2]]", Any) == [
+        1,
+        2.5,
+        True,
+        False,
+        None,
+        "abc",
+        [1, 2],
+    ]
+    assert _parseu("(1, 2.5, true, null, abc, (1, 2))", Any) == (
+        1,
+        2.5,
+        True,
+        None,
+        "abc",
+        (1, 2),
+    )
+
+
+def test_any_from_direct_values():
+    """Test Any with already-resolved values (pass-through)."""
+    assert _parse(42, Any) == 42
+    assert _parse(3.14, Any) == 3.14
+    _assert_bool_equals(_parse(True, Any), True)
+    _assert_bool_equals(_parse(False, Any), False)
+    assert _parse(None, Any) is None
+    assert _parse("hello", Any) == "hello"
+    assert _parse([1, 2, 3], Any) == [1, 2, 3]
+    assert _parse((1, 2, 3), Any) == (1, 2, 3)
+    assert _parse({"a": 1}, Any) == {"a": 1}
+    assert _parse(float("inf"), Any) == float("inf")
+    assert math.isnan(_parse(float("nan"), Any))
+
+
+def test_any_nested_dict_with_unresolved():
+    """Test Any with nested dict containing UnresolvedString."""
+    assert _parse({"a": U("42"), "b": U("true")}, Any) == {"a": 42, "b": True}
+    assert _parse({"a": U("42"), "b": U("3.14"), "c": U("null")}, Any) == {
+        "a": 42,
+        "b": 3.14,
+        "c": None,
+    }
+    assert _parse({"a": U("1"), "b": U("false"), "c": U("abc"), "d": U('"quoted"')}, Any) == {
+        "a": 1,
+        "b": False,
+        "c": "abc",
+        "d": "quoted",
+    }
+
+
+def test_any_nested_list_with_unresolved():
+    """Test Any with nested list containing UnresolvedString."""
+    assert _parse([U("42"), U("true"), U("null")], Any) == [42, True, None]
+    assert _parse([U("1"), U("2.5"), U("false"), U("abc")], Any) == [
+        1,
+        2.5,
+        False,
+        "abc",
+    ]
+
+
+def test_any_nested_tuple_with_unresolved():
+    """Test Any with nested tuple containing UnresolvedString."""
+    assert _parse((U("42"), U("true"), U("null")), Any) == (42, True, None)
+    assert _parse((U("1"), U("2.5"), U("false"), U("abc")), Any) == (
+        1,
+        2.5,
+        False,
+        "abc",
+    )
+
+
+def test_any_deeply_nested_structures():
+    """Test Any with deeply nested structures mixing UnresolvedString and resolved values."""
+    assert _parse({"a": [U("1"), U("2")], "b": {"c": U("true")}}, Any) == {
+        "a": [1, 2],
+        "b": {"c": True},
+    }
+    assert _parse({"outer": {"inner": [U("1"), U("2"), (U("3"), U("4"))]}}, Any) == {"outer": {"inner": [1, 2, (3, 4)]}}
+    assert _parse([U("1"), {"a": U("2"), "b": [U("3"), U("4")]}, (U("5"), U("6"))], Any) == [
+        1,
+        {"a": 2, "b": [3, 4]},
+        (5, 6),
+    ]
+
+
+def test_any_edge_case_empty():
+    """Test Any with empty values."""
+    assert _parseu("", Any) == ""
+    assert _parse([], Any) == []
+    assert _parse((), Any) == ()
+    assert _parse({}, Any) == {}
+
+
+def test_any_edge_case_whitespace():
+    """Test Any with whitespace handling."""
+    assert _parseu("  ", Any) == ""  # Strips to empty string
+    assert _parseu("  123  ", Any) == 123  # Strips then parses
+    assert _parseu("  true  ", Any) is True  # Strips then parses
+    assert _parseu("  null  ", Any) is None  # Strips then parses
+
+
+def test_any_edge_case_all_same_type():
+    """Test Any with sequences of all same type."""
+    assert _parseu("[null, null, null]", Any) == [None, None, None]
+    assert _parseu("[true, false, true]", Any) == [True, False, True]
+    assert _parseu("[1, 2, 3, 4, 5]", Any) == [1, 2, 3, 4, 5]
+    assert _parseu("[1.1, 2.2, 3.3]", Any) == [1.1, 2.2, 3.3]
+    assert _parseu("[a, b, c]", Any) == ["a", "b", "c"]
+
+
+def test_any_type_priority():
+    """Test type inference priority for Any."""
+    # Priority: sequence > quoted string > None > bool > int > float > str
+    assert _parseu("null", Any) is None  # Not "null"
+    assert _parseu('"null"', Any) == "null"  # Quoted forces string
+    _assert_bool_equals(_parseu("true", Any), True)  # Not "true"
+    assert _parseu('"true"', Any) == "true"  # Quoted forces string
+    assert _parseu("123", Any) == 123  # Not "123"
+    assert _parseu('"123"', Any) == "123"  # Quoted forces string
+    assert _parseu("3.14", Any) == 3.14  # Not "3.14"
+    assert _parseu('"3.14"', Any) == "3.14"  # Quoted forces string
+
+
+def test_any_ambiguous_values():
+    """Test Any with values that look like types but aren't."""
+    assert _parseu("trueish", Any) == "trueish"  # Not "true"
+    assert _parseu("nullify", Any) == "nullify"  # Not "null"
+    assert _parseu("123abc", Any) == "123abc"  # Not valid int
+    assert _parseu("12.34.56", Any) == "12.34.56"  # Not valid float
+    assert _parseu("Tru", Any) == "Tru"  # Not "True"
+    assert _parseu("Nul", Any) == "Nul"  # Not "null"
+
+
+def test_any_trailing_comma():
+    """Test Any with trailing comma produces empty string."""
+    assert _parseu("(1,)", Any) == (1, "")
+    assert _parseu("(abc,)", Any) == ("abc", "")
+
+
+################################################################################
+# Test Unparameterized Collections - Advanced
+################################################################################
+
+
+def test_untyped_list_mixed_inference():
+    """Test unparameterized list with mixed types inferred from strings."""
+    assert _parseu("[1, 2.5, true, abc, [1,2]]", list) == [1, 2.5, True, "abc", [1, 2]]
+    assert _parseu("[null, false, 123, abc]", list) == [None, False, 123, "abc"]
+    assert _parseu('["quoted", unquoted, 42, true]', list) == [
+        "quoted",
+        "unquoted",
+        42,
+        True,
+    ]
+
+
+def test_untyped_list_all_unresolved():
+    """Test unparameterized list with all UnresolvedString elements."""
+    assert _parse([U("1"), U("2"), U("3")], list) == [1, 2, 3]
+    assert _parse([U("true"), U("false"), U("null")], list) == [True, False, None]
+    assert _parse([U("1"), U("2.5"), U("abc")], list) == [1, 2.5, "abc"]
+
+
+def test_untyped_tuple_mixed_inference():
+    """Test unparameterized tuple with mixed types inferred from strings."""
+    assert _parseu("(1, 2.5, true, abc, (1,2))", tuple) == (1, 2.5, True, "abc", (1, 2))
+    assert _parseu("(null, false, 123, abc)", tuple) == (None, False, 123, "abc")
+    assert _parseu('("quoted", unquoted, 42, true)', tuple) == (
+        "quoted",
+        "unquoted",
+        42,
+        True,
+    )
+
+
+def test_untyped_tuple_trailing_comma():
+    """Test unparameterized tuple with trailing comma produces empty string."""
+    assert _parseu("(1,)", tuple) == (1, "")
+    assert _parseu("(abc,)", tuple) == ("abc", "")
+
+
+def test_untyped_tuple_single_element():
+    """Test unparameterized tuple with single element from list."""
+    assert _parse([1], tuple) == (1,)
+    assert _parse([U("42")], tuple) == (42,)
+
+
+def test_untyped_tuple_from_list_conversion():
+    """Test unparameterized tuple conversion from list."""
+    assert _parse([1, 2, 3], tuple) == (1, 2, 3)
+    assert _parse([], tuple) == ()
+    assert _parse([U("1"), U("2.5"), U("true")], tuple) == (1, 2.5, True)
+
+
+def test_untyped_dict_with_unresolved_values():
+    """Test unparameterized dict with UnresolvedString values (type inference)."""
+    assert _parse({"a": U("42"), "b": U("true"), "c": U("null")}, dict) == {
+        "a": 42,
+        "b": True,
+        "c": None,
+    }
+    assert _parse({"x": U("1"), "y": U("2.5"), "z": U("abc")}, dict) == {
+        "x": 1,
+        "y": 2.5,
+        "z": "abc",
+    }
+    assert _parse(
+        {"int": U("123"), "float": U("3.14"), "bool": U("true"), "str": U('"text"')},
+        dict,
+    ) == {"int": 123, "float": 3.14, "bool": True, "str": "text"}
+
+
+def test_untyped_dict_nested():
+    """Test unparameterized dict with nested structures."""
+    assert _parse({"a": 1, "b": "text", "c": True, "d": None, "e": [1, 2]}, dict) == {
+        "a": 1,
+        "b": "text",
+        "c": True,
+        "d": None,
+        "e": [1, 2],
+    }
+    assert _parse({"a": {"b": {"c": U("123")}}}, dict) == {"a": {"b": {"c": 123}}}
+    assert _parse(
+        {
+            "ints": [U("1"), U("2"), U("3")],
+            "strs": [U("a"), U("b")],
+            "nested": {"x": U("true"), "y": U("3.14")},
+        },
+        dict,
+    ) == {
+        "ints": [1, 2, 3],
+        "strs": ["a", "b"],
+        "nested": {"x": True, "y": 3.14},
+    }
+
+
+def test_untyped_dict_complex_values():
+    """Test unparameterized dict with complex value types."""
+    assert _parse(
+        {
+            "list": [1, 2, 3],
+            "tuple": (1, 2),
+            "dict": {"nested": U("42")},
+            "mixed": [U("1"), U("abc"), U("true")],
+        },
+        dict,
+    ) == {
+        "list": [1, 2, 3],
+        "tuple": (1, 2),
+        "dict": {"nested": 42},
+        "mixed": [1, "abc", True],
+    }
+
+
+def test_untyped_collections_nested_mixed():
+    """Test deeply nested unparameterized collections with mixed types."""
+    assert _parseu("[(1, 2), [3, 4], (5, [6, 7])]", list) == [(1, 2), [3, 4], (5, [6, 7])]
+    assert _parse([[U("1"), U("2")], (U("3"), U("4")), [U("true"), U("false")]], list) == [
+        [1, 2],
+        (3, 4),
+        [True, False],
+    ]
+    assert _parse(([U("1"), U("2")], [U("3"), U("4")], (U("true"), U("false"))), tuple) == (
+        [1, 2],
+        [3, 4],
+        (True, False),
+    )
+
+
+def test_untyped_collections_conversion():
+    """Test conversion between unparameterized list and tuple."""
+    # List from tuple
+    assert _parse((1, 2, 3), list) == [1, 2, 3]
+    assert _parse((U("1"), U("2"), U("3")), list) == [1, 2, 3]
+
+    # Tuple from list
+    assert _parse([1, 2, 3], tuple) == (1, 2, 3)
+    assert _parse([U("1"), U("2"), U("3")], tuple) == (1, 2, 3)

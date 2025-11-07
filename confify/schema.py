@@ -42,6 +42,8 @@ class UnresolvedString:
     def resolve_as_any(self, options: ConfifyOptions = ConfifyOptions.get_default()) -> Any:
         s = self.value
         s = s.strip()
+        if s == "":
+            return ""
         if s[0] == "[" and s[-1] == "]":
             return [x.resolve_as_any() for x in self.resolve_as_sequence()]
         elif s[0] == "(" and s[-1] == ")":
