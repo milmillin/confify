@@ -10,10 +10,12 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 - Supports subclassing of `dataclass` by specifying the classname. (e.g., `--encoder.\$type mymodule.MyEncoder`)
 - Supports `Optional`, `Union`, `Literal`.
 - Has minimal dependencies (only `PyYaml`).
+- Supports **type-safe** configuration sweeps for hyperparameter search.
 
 ## Installation
 
 (TODO) Upload to PyPI
+
 ```bash
 pip install git+https://github.com/milmillin/confify.git
 ```
@@ -25,7 +27,8 @@ pip install git+https://github.com/milmillin/confify.git
 ```python
 # example.py
 
-from confify import read_config_from_cli, config_dump_yaml
+from dataclasses import dataclass
+from confify import Confify, config_dump_yaml
 
 @dataclass
 class EncoderConfig:
@@ -40,13 +43,17 @@ class Config:
     run_id: Optional[str]
     encoder: EncoderConfig
 
-if __name__ == "__main__":
-    # parsing config from sys.argv
-    config = read_config_from_cli(Config)
+c = Confify(Config)
+
+@c.main()
+def main(config: Config):
     # config is properly typed
     assert reveal_type(config) == Config
     # dumping config to yaml
     config_dump_yaml("config.yaml", config)
+
+if __name__ == "__main__":
+    main()
 ```
 
 ### Using the CLI
@@ -64,6 +71,8 @@ python example.py \
 ```
 
 We **do not** support equal signs in dotlist notations (for now). For example, `--encoder.depth=6` will not work.
+
+For advanced CLI features including configuration generators, sweeps, and custom exporters, see the **[CLI Documentation](docs/cli.md)**.
 
 ### Loading partial configurations from YAML
 
@@ -152,6 +161,7 @@ config = read_config_from_cli(MyConfig)  # Uses global defaults
 - **`type_key`** (default: `"$type"`): Special dictionary key for polymorphic type resolution. When present in input data, specifies the actual class to use (must be a fully qualified name like `module.ClassName`). See [Dataclasses Subclassing](#dataclasses-subclassing) for details.
 
 - **`ignore_extra_fields`** (default: `False`): Controls behavior when extra/unknown fields are present in dataclasses or TypedDict:
+
   - `False`: Raises an error if extra fields are found (strict validation)
   - `True`: Issues a warning and ignores extra fields (lenient validation)
 
@@ -219,6 +229,7 @@ python example.py --value '"42"'  # → "42" (str)
 #### Unparameterized Collection Types
 
 Collections without type parameters automatically use `Any` for their elements:
+
 - `list` is equivalent to `list[Any]`
 - `tuple` is equivalent to `tuple[Any, ...]` (variable-length)
 - `dict` is equivalent to `dict[str, Any]`
@@ -328,14 +339,124 @@ config = parse(data, Config, options=options)  # Warning issued, but succeeds
 This applies to both dataclasses and TypedDict. Missing required fields always raise an error regardless of this option.
 
 #### YAML
+
 Values loaded from YAML usually have the correct type, except for type `Union[Enum, str]` where the value will always be converted to a matching `Enum`.
 
 `config_dump_yaml` will dump the config to a YAML file without special tags. We add `$type` field to the dataclasses to indicate the type of the dataclass.
 
-
 ### Supported types
 
 `int`, `float`, `bool`, `str`, `None`, `Path`, `Any`, `list`, `tuple`, `dict`, `Iterable`, `Sequence`, `Enum`, `dataclass`, `Union`, `Literal`, `TypedDict`
+
+## Configuration Sweeps
+
+Confify supports **type-safe configuration sweeps** for hyperparameter search and experiment management. Use generators to programmatically create multiple configuration variants from parameter grids.
+
+### Basic Example
+
+```python
+from dataclasses import dataclass
+from confify import Confify, ConfigStatements, Set, Sweep, SetType, As, L
+
+@dataclass
+class Optimizer:
+    learning_rate: float
+
+@dataclass
+class SGD(Optimizer):
+    momentum: float = 0.9
+
+@dataclass
+class Adam(Optimizer):
+    beta1: float = 0.9
+
+@dataclass
+class Config:
+    experiment_name: str
+    model: str
+    batch_size: int
+    optimizer: Optimizer
+
+c = Confify(Config)
+
+@c.generator()
+def experiments(_: Config) -> ConfigStatements:
+    return [
+        Set(_.experiment_name).to(L("exp_{name}")),
+        Set(_.model).to("resnet50"),
+        Sweep(
+            _bs32=[Set(_.batch_size).to(32)],
+            _bs64=[Set(_.batch_size).to(64)],
+        ),
+        Sweep(
+            _sgd=[
+                Set(_.optimizer.learning_rate).to(0.1),
+                SetType(_.optimizer)(
+                    As(SGD).then(lambda opt: [
+                        Set(opt.momentum).to(0.8),
+                    ])
+                )
+            ],
+            _adam=[
+                Set(_.optimizer.learning_rate).to(0.001),
+                SetType(_.optimizer)(
+                    As(Adam).then(lambda opt: [
+                        Set(opt.beta1).to(0.99),
+                    ])
+                )
+            ],
+        ),
+    ]
+
+@c.main()
+def main(config: Config):
+    print(f"Running {config.experiment_name}")
+    print(f"  Model: {config.model}")
+    print(f"  Batch size: {config.batch_size}")
+    print(f"  Optimizer: {config.optimizer}")
+
+if __name__ == "__main__":
+    main()
+```
+
+This generates **4 configurations** (2 batch sizes × 2 optimizers):
+
+- `experiments_bs32_sgd`
+- `experiments_bs32_adam`
+- `experiments_bs64_sgd`
+- `experiments_bs64_adam`
+
+### Usage
+
+```bash
+# List all generated configs
+python train.py list experiments
+
+# Generate shell scripts for each config
+python train.py generate shell experiments
+# Creates: _generated/train_experiments/experiments_bs32_sgd.sh, etc.
+
+# Run a specific config directly
+python train.py run experiments_bs32_sgd
+```
+
+### Key Components
+
+- **`Set(_.field).to(value)`**: Set a field value
+- **`Sweep(_variant1=[...], _variant2=[...])`**: Create multiple variants from parameter combinations (cartesian product)
+- **`SetType(_.field)(As(Type).then(lambda x: [...]))`**: Set polymorphic types for dataclass subclassing
+- **`L("{name}")`**: Template strings for unique experiment names
+
+See **[CLI Documentation](docs/cli.md)** for comprehensive guides on generators, sweeps, custom exporters, and best practices.
+
+## Examples
+
+The `examples/` directory contains several examples demonstrating different Confify features:
+
+- **`ex_basic.py`** - Simple CLI application with main function
+- **`ex_generator.py`** - Configuration generators with polymorphic types
+- **`ex_sweep_patterns.py`** - Different sweep patterns for hyperparameter searches
+- **`ex_ml_config.py`** - Realistic ML training configuration example
 
 ## Limitations and Known Issues
 
