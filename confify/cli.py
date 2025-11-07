@@ -14,6 +14,8 @@ from typing import (
     NamedTuple,
     Iterable,
     ClassVar,
+    overload,
+    TypedDict,
 )
 from pathlib import Path
 import itertools
@@ -23,6 +25,7 @@ import json
 import shlex
 from abc import abstractmethod, ABC
 import shutil
+from datetime import datetime
 
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
 from .schema import Schema, DictSchema, MappingSchema
@@ -81,7 +84,11 @@ class Set(Generic[T]):
             raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{type(field).__qualname__}`")
         self.duck_typed = field
 
-    def to(self, value: T) -> SetRecord[T]:
+    @overload
+    def to(self: "Set[Path]", value: Union[Path, L]) -> SetRecord[Path]: ...
+    @overload
+    def to(self, value: T) -> SetRecord[T]: ...
+    def to(self, value):
         return SetRecord(self.duck_typed, value, from_yaml=False)
 
     def from_yaml(self, path: Path) -> SetRecord[T]:
@@ -194,17 +201,49 @@ def execute(stmts: ConfigStatements, base_name: str) -> Iterable[NamedPureConfig
 # endregion
 
 
+# region LStr Default
+
+
+def create_lstr_kwargs(script_name: str = "", name: str = "", generator_name: str = "") -> dict[str, str]:
+    """
+    Create LStrKwargs with current datetime information prepopulated.
+    """
+    now = datetime.now()
+    return dict(
+        script_name=script_name,
+        name=name,
+        generator_name=generator_name,
+        Y=now.strftime("%Y"),
+        m=now.strftime("%m"),
+        d=now.strftime("%d"),
+        H=now.strftime("%H"),
+        M=now.strftime("%M"),
+        s=now.strftime("%S"),
+    )
+
+
+# endregion
+
+
 # region Compilation
 
 
-def compile_to_config(stmts: PureConfigStatements, schema: Schema, options: ConfifyOptions) -> Any:
+def compile_to_config(
+    stmts: PureConfigStatements,
+    schema: Schema,
+    options: ConfifyOptions,
+    lstr_kwargs: dict[str, str],
+) -> Any:
     res: dict[str, Any] = {}
     for stmt in stmts:
         if isinstance(stmt, SetRecord):
             if stmt.from_yaml:
                 value = read_yaml(stmt.value)
             else:
-                value = stmt.value
+                if isinstance(stmt.value, L):
+                    value = stmt.value.format(**lstr_kwargs)
+                else:
+                    value = stmt.value
             _insert_dict(res, stmt.duck_typed.prefixes, value)
         elif isinstance(stmt, SetTypeRecord):
             _insert_dict(res, stmt.duck_typed.prefixes + [options.type_key], classname_of_cls(stmt.to_type))
@@ -252,9 +291,8 @@ def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]
 
 def compile_to_args(
     stmts: PureConfigStatements,
-    name: str,
     options: ConfifyOptions,
-    lstr_kwargs: dict[str, str] = {},
+    lstr_kwargs: dict[str, str],
     shell_escape: bool = True,
 ) -> list[str]:
     args: list[str] = []
@@ -267,7 +305,7 @@ def compile_to_args(
             else:
                 if isinstance(stmt.value, L):
                     args.append(f"{options.prefix}{dotnotation}")
-                    args.append(stmt.value.format(name=name, **lstr_kwargs))
+                    args.append(stmt.value.format(**lstr_kwargs))
                 else:
                     args.extend(_any_to_args(stmt.value, options=options, prefix=dotnotation))
         elif isinstance(stmt, SetTypeRecord):
@@ -289,6 +327,7 @@ def compile_to_args(
 # region Exporter
 
 
+@dataclass
 class ConfifyExporterConfig:
     shell_escape: bool = True
 
@@ -296,24 +335,31 @@ class ConfifyExporterConfig:
 class ConfifyExporter:
     config: ClassVar[ConfifyExporterConfig] = ConfifyExporterConfig()
 
-    def pre_run(self, generator_name: str) -> dict[str, str]:
+    def pre_run(self, lstr_kwargs: dict[str, str]) -> dict[str, str]:
         return {}
 
     @abstractmethod
-    def run(self, generator_name: str, run_name: str, args: list[str], lstr_kwargs: dict[str, str]): ...
+    def run(self, args: list[str], lstr_kwargs: dict[str, str]): ...
 
-    def post_run(self, generator_name: str):
+    def post_run(self, lstr_kwargs: dict[str, str]):
         pass
 
 
 class ShellExporter(ConfifyExporter):
-    def pre_run(self, generator_name: str) -> dict[str, str]:
-        this_fn = Path(sys.argv[0]).stem
-        output_dir = Path("_generated") / f"{this_fn}_{generator_name}"
+    def __init__(
+        self, output_dir_fmt: str = "_generated/{script_name}_{generator_name}", output_fmt: str = "{name}.sh"
+    ):
+        self.output_dir_fmt = output_dir_fmt
+        self.output_fmt = output_fmt
+
+    def pre_run(self, lstr_kwargs: dict[str, str]) -> dict[str, str]:
+        output_dir = Path(self.output_dir_fmt.format(**lstr_kwargs))
+
         shutil.rmtree(output_dir, ignore_errors=True)
+        output_dir.mkdir(exist_ok=True, parents=True)
         return {}
 
-    def run(self, generator_name: str, run_name: str, args: list[str], lstr_kwargs: dict[str, str]):
+    def run(self, args: list[str], lstr_kwargs: dict[str, str]):
         assert len(args) % 2 == 0
         args = [f"{k} {v}" for k, v in zip(args[::2], args[1::2])]
         args_str = " \\\n    ".join(args)
@@ -324,10 +370,8 @@ python {sys.argv[0]} \\
     {args_str}
 """
 
-        this_fn = Path(sys.argv[0]).stem
-        output_dir = Path("_generated") / f"{this_fn}_{generator_name}"
-        output_dir.mkdir(exist_ok=True, parents=True)
-        out_fn = output_dir / f"{run_name}.sh"
+        output_dir = Path(self.output_dir_fmt.format(**lstr_kwargs))
+        out_fn = output_dir / self.output_fmt.format(**lstr_kwargs)
         out_fn.write_text(sh)
         out_fn.chmod(0o755)
 
@@ -448,15 +492,12 @@ class Confify(Generic[T]):
                     print(stmts.name)
         elif argv[0] in ["g", "gen", "generate"]:
             # Run generator
-            not_found: list[str] = []
-            for generator_name in argv[2:]:
-                if generator_name not in self.gen_fns:
-                    not_found.append(generator_name)
-            if len(not_found) > 0:
-                raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
-
-            if len(argv) < 2:
-                raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name> ...`")
+            if len(argv) != 3:
+                raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name>`")
+            generator_name = argv[2]
+            if generator_name not in self.gen_fns:
+                raise ConfifyCLIError(f"Generator not found: {generator_name}")
+            generator = self.gen_fns[generator_name]
 
             exporter_name = argv[1]
             if exporter_name not in self.exporter_fns:
@@ -465,18 +506,22 @@ class Confify(Generic[T]):
 
             shell_escape = exporter.config.shell_escape
 
+            lstr_kwargs = create_lstr_kwargs(
+                script_name=Path(sys.argv[0]).stem,
+                name="",
+                generator_name=generator_name,
+            )
             cnt = 0
-            for generator_name in argv[2:]:
-                lstr_kwargs = exporter.pre_run(generator_name)
-                prog = self.gen_fns[generator_name](self.duck_typed)
-                stmtss = execute(prog, base_name=generator_name)
-                for stmts in stmtss:
-                    args = compile_to_args(
-                        stmts.stmts, stmts.name, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs
-                    )
-                    exporter.run(generator_name, stmts.name, args, lstr_kwargs)
-                    cnt += 1
-                exporter.post_run(generator_name)
+            extra_kwargs = exporter.pre_run(lstr_kwargs)
+            lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
+            prog = generator(self.duck_typed)
+            stmtss = execute(prog, base_name=generator_name)
+            for stmts in stmtss:
+                lstr_kwargs["name"] = stmts.name
+                args = compile_to_args(stmts.stmts, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
+                exporter.run(args, lstr_kwargs)
+                cnt += 1
+            exporter.post_run(lstr_kwargs)
 
             print(f"\nExported {cnt} configs.")
         elif argv[0] in ["r", "run"]:
@@ -490,7 +535,12 @@ class Confify(Generic[T]):
                     stmtss = execute(prog, base_name=gen_name)
                     for stmts in stmtss:
                         if stmts.name == run_name:
-                            config = compile_to_config(stmts.stmts, self.schema, self.options)
+                            lstr_kwargs = create_lstr_kwargs(
+                                script_name=Path(sys.argv[0]).stem,
+                                name=run_name,
+                                generator_name=gen_name,
+                            )
+                            config = compile_to_config(stmts.stmts, self.schema, self.options, lstr_kwargs)
                             break
             if config is None:
                 raise ConfifyCLIError(f"Config not found: {run_name}.")
