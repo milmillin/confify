@@ -248,7 +248,7 @@ def compile_to_config(
         elif isinstance(stmt, SetTypeRecord):
             _insert_dict(res, stmt.duck_typed.prefixes + [options.type_key], classname_of_cls(stmt.to_type))
         else:
-            raise ConfifyBuilderError(f"Invalid statement: {stmt}")
+            raise ConfifyCLIError(f"Invalid statement: {stmt}")
     return schema.parse(res, options)
 
 
@@ -268,7 +268,7 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
     elif isinstance(v, tuple):
         return "(" + ", ".join([_stringify_impl(e) for e in v]) + ")"
     else:
-        raise ValueError(f"Unsupported type: {type(v)}")
+        raise ConfifyCLIError(f"Unsupported type for stringification: {type(v)}")
 
 
 def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
@@ -286,7 +286,7 @@ def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]
             res.extend(_any_to_args(getattr(v, f.name), options=options, prefix=f"{prefix}.{f.name}"))
         return res
     else:
-        raise ConfifyBuilderError(f"Invalid type: {type(v)}")
+        raise ConfifyCLIError(f"Invalid type: {type(v)}")
 
 
 def compile_to_args(
@@ -316,7 +316,7 @@ def compile_to_args(
                 ]
             )
         else:
-            raise ConfifyBuilderError(f"Invalid statement: {stmt}")
+            raise ConfifyCLIError(f"Invalid statement: {stmt}")
     if shell_escape:
         args = [shlex.quote(arg) for arg in args]
     return args
@@ -430,7 +430,7 @@ def read_config_from_argv(
             key = key[len(options.prefix) :]
             value = UnresolvedString(value)
         else:
-            raise ValueError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
+            raise ConfifyCLIError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
         _insert_dict(args, key.split(".") if key else [], value)
         i += 2
     return parse(args, Config, schema=schema)
@@ -466,89 +466,123 @@ class Confify(Generic[T]):
 
         return decorator
 
-    def main_wrapper(self):
+    def _handle_main_execution(self, argv: list[str]):
+        """Handle main execution mode: parse config from CLI args and run main function."""
         if self.main_fn is None:
             raise ConfifyCLIError("Main function is not set.")
-        argv = sys.argv[1:]
-        if len(argv) == 0 or argv[0].startswith(self.options.prefix) or argv[0].startswith(self.options.yaml_prefix):
-            # Run main function
-            try:
-                config = read_config_from_argv(self.Config, argv, self.options, schema=self.schema)
-                return self.main_fn(config)
-            except ConfifyParseError as e:
-                print(e)
-        elif argv[0] in ["l", "ls", "list"]:
-            # Run generator
-            not_found: list[str] = []
-            for generator_name in argv[1:]:
-                if generator_name not in self.gen_fns:
-                    not_found.append(generator_name)
-            if len(not_found) > 0:
-                raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
-            for generator_name in argv[1:]:
-                prog = self.gen_fns[generator_name](self.duck_typed)
-                stmtss = execute(prog, base_name=generator_name)
-                for stmts in stmtss:
-                    print(stmts.name)
-        elif argv[0] in ["g", "gen", "generate"]:
-            # Run generator
-            if len(argv) != 3:
-                raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name>`")
-            generator_name = argv[2]
+        config = read_config_from_argv(self.Config, argv, self.options, schema=self.schema)
+        return self.main_fn(config)
+
+    def _handle_list_command(self, argv: list[str]):
+        """Handle list command: list configurations from specified generators."""
+        not_found: list[str] = []
+        for generator_name in argv[1:]:
             if generator_name not in self.gen_fns:
-                raise ConfifyCLIError(f"Generator not found: {generator_name}")
-            generator = self.gen_fns[generator_name]
-
-            exporter_name = argv[1]
-            if exporter_name not in self.exporter_fns:
-                raise ConfifyCLIError(f"Exporter not found: {exporter_name}")
-            exporter = self.exporter_fns[exporter_name]
-
-            shell_escape = exporter.config.shell_escape
-
-            lstr_kwargs = create_lstr_kwargs(
-                script_name=Path(sys.argv[0]).stem,
-                name="",
-                generator_name=generator_name,
-            )
-            cnt = 0
-            extra_kwargs = exporter.pre_run(lstr_kwargs)
-            lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
-            prog = generator(self.duck_typed)
+                not_found.append(generator_name)
+        if len(not_found) > 0:
+            raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
+        for generator_name in argv[1:]:
+            prog = self.gen_fns[generator_name](self.duck_typed)
             stmtss = execute(prog, base_name=generator_name)
             for stmts in stmtss:
-                lstr_kwargs["name"] = stmts.name
-                args = compile_to_args(stmts.stmts, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
-                exporter.run(args, lstr_kwargs)
-                cnt += 1
-            exporter.post_run(lstr_kwargs)
+                print(stmts.name)
 
-            print(f"\nExported {cnt} configs.")
-        elif argv[0] in ["r", "run"]:
-            if not len(argv) == 2:
-                raise ConfifyCLIError("Invalid arguments. Expected `run <config-name>`")
-            run_name = argv[1]
-            config = None
-            for gen_name, gen_fn in self.gen_fns.items():
-                if run_name.startswith(gen_name):
-                    prog = gen_fn(self.duck_typed)
-                    stmtss = execute(prog, base_name=gen_name)
-                    for stmts in stmtss:
-                        if stmts.name == run_name:
-                            lstr_kwargs = create_lstr_kwargs(
-                                script_name=Path(sys.argv[0]).stem,
-                                name=run_name,
-                                generator_name=gen_name,
-                            )
-                            config = compile_to_config(stmts.stmts, self.schema, self.options, lstr_kwargs)
-                            break
-            if config is None:
-                raise ConfifyCLIError(f"Config not found: {run_name}.")
-            return self.main_fn(config)
-        else:
-            # TODO: print help
-            print("Help")
-            pass
+    def _handle_generate_command(self, argv: list[str]):
+        """Handle generate command: generate configuration files using an exporter."""
+        if len(argv) != 3:
+            raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name>`")
+
+        generator_name = argv[2]
+        if generator_name not in self.gen_fns:
+            raise ConfifyCLIError(f"Generator not found: {generator_name}")
+        generator = self.gen_fns[generator_name]
+
+        exporter_name = argv[1]
+        if exporter_name not in self.exporter_fns:
+            raise ConfifyCLIError(f"Exporter not found: {exporter_name}")
+        exporter = self.exporter_fns[exporter_name]
+
+        shell_escape = exporter.config.shell_escape
+
+        lstr_kwargs = create_lstr_kwargs(
+            script_name=Path(sys.argv[0]).stem,
+            name="",
+            generator_name=generator_name,
+        )
+        cnt = 0
+        extra_kwargs = exporter.pre_run(lstr_kwargs)
+        lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
+        prog = generator(self.duck_typed)
+        stmtss = execute(prog, base_name=generator_name)
+        for stmts in stmtss:
+            lstr_kwargs["name"] = stmts.name
+            args = compile_to_args(stmts.stmts, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
+            exporter.run(args, lstr_kwargs)
+            cnt += 1
+        exporter.post_run(lstr_kwargs)
+
+        print(f"\nExported {cnt} configs.")
+
+    def _handle_run_command(self, argv: list[str]):
+        """Handle run command: run a named configuration directly."""
+        if self.main_fn is None:
+            raise ConfifyCLIError("Main function is not set.")
+        if not len(argv) == 2:
+            raise ConfifyCLIError("Invalid arguments. Expected `run <config-name>`")
+
+        run_name = argv[1]
+        config = None
+        for gen_name, gen_fn in self.gen_fns.items():
+            if run_name.startswith(gen_name):
+                prog = gen_fn(self.duck_typed)
+                stmtss = execute(prog, base_name=gen_name)
+                for stmts in stmtss:
+                    if stmts.name == run_name:
+                        lstr_kwargs = create_lstr_kwargs(
+                            script_name=Path(sys.argv[0]).stem,
+                            name=run_name,
+                            generator_name=gen_name,
+                        )
+                        config = compile_to_config(stmts.stmts, self.schema, self.options, lstr_kwargs)
+                        break
+        if config is None:
+            raise ConfifyCLIError(f"Config not found: {run_name}")
+        return self.main_fn(config)
+
+    def _handle_help_command(self):
+        """Handle help command: display usage information."""
+        print("Usage:")
+        print(f"  python {sys.argv[0]} [--<key> <value>]...           Run main with config from CLI args")
+        print(f"  python {sys.argv[0]} list [<generator>]...         List configurations")
+        print(f"  python {sys.argv[0]} gen <exporter> <generator>    Generate configuration files")
+        print(f"  python {sys.argv[0]} run <config-name>             Run a named configuration")
+
+    def main_wrapper(self):
+        """Main entry point with centralized error handling and command dispatching."""
+        try:
+            if self.main_fn is None:
+                raise ConfifyCLIError("Main function is not set.")
+
+            argv = sys.argv[1:]
+
+            # Dispatch to appropriate command handler
+            if (
+                len(argv) == 0
+                or argv[0].startswith(self.options.prefix)
+                or argv[0].startswith(self.options.yaml_prefix)
+            ):
+                return self._handle_main_execution(argv)
+            elif argv[0] in ["l", "ls", "list"]:
+                return self._handle_list_command(argv)
+            elif argv[0] in ["g", "gen", "generate"]:
+                return self._handle_generate_command(argv)
+            elif argv[0] in ["r", "run"]:
+                return self._handle_run_command(argv)
+            else:
+                return self._handle_help_command()
+        except ConfifyError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     def generator(self, name: Optional[str] = None):
         """
