@@ -139,6 +139,18 @@ class _ParseResult:
     warnings: list[_ParseWarningEntry] = field(default_factory=list)
 
 
+def _substitute_typevars(T: _TypeFormT, type_dict: dict[TypeVar, _TypeFormT]) -> _TypeFormT:
+    if isinstance(T, TypeVar):
+        return type_dict[T]
+    Origin = get_origin(T)
+    if Origin is None:
+        return T
+    args = get_args(T)
+    if len(args) == 0:
+        return Origin
+    return Origin[tuple(_substitute_typevars(a, type_dict) for a in args)]
+
+
 def _parse_dataclass(
     T: type, type_args: tuple[_TypeFormT, ...], prefix: str
 ) -> tuple[dict[str, _TypeFormT], dict[str, _TypeFormT], set[int]]:
@@ -185,9 +197,9 @@ def _parse_dataclass(
         if id(f) in super_field_ids:
             continue
         if f.default == MISSING and f.default_factory == MISSING:
-            required_fields[f.name] = type_dict.get(f.type, f.type)
+            required_fields[f.name] = _substitute_typevars(f.type, type_dict)
         else:
-            optional_fields[f.name] = type_dict.get(f.type, f.type)
+            optional_fields[f.name] = _substitute_typevars(f.type, type_dict)
         super_field_ids.add(id(f))
     return required_fields, optional_fields, super_field_ids
 
