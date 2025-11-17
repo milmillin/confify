@@ -1,6 +1,22 @@
-from typing import Any, Type, TypeVar
+from typing import Any, Type, TypeVar, get_args, get_origin, Annotated
 import sys
 from importlib import import_module
+
+
+def repr_of_typeform(cls: type) -> str:
+    Origin = get_origin(cls)
+    args = get_args(cls)
+    if Origin is Annotated:
+        x = args[0]
+        Origin = get_origin(x)
+        args = get_args(x)
+
+    if Origin is not None:
+        if len(args) == 0:
+            return Origin.__qualname__
+        args_str = ", ".join(repr_of_typeform(a) for a in args)
+        return f"{Origin.__qualname__}[{args_str}]"
+    return cls.__qualname__
 
 
 def classname_of_cls(cls: type) -> str:
@@ -9,7 +25,7 @@ def classname_of_cls(cls: type) -> str:
     """
     module = cls.__module__
     name = cls.__qualname__
-    if module is not None and module != "__builtin__":
+    if module is not None and module != "__builtin__" and module != "builtins":
         name = module + "." + name
     return name
 

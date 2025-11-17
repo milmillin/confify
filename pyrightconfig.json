@@ -1,6 +1,9 @@
 {
   "include": [
-    "confify"
+    "confify",
+    "examples",
+    "tests",
+    "*.py"
   ],
   "exclude": [
     "**/node_modules",

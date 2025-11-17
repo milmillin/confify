@@ -15,7 +15,9 @@ from typing import (
     Optional,
     Never,
     Tuple,
+    TypeVar,
 )
+from collections.abc import Iterable as CollectionsIterable, Sequence as CollectionsSequence
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import fields, is_dataclass, MISSING, dataclass, field
@@ -23,7 +25,7 @@ from inspect import isclass
 import ast
 
 from .base import ConfifyTypeError, ConfifyOptions, _warning, ConfifyParseError, ConfifyBuilderError
-from .utils import classname_of_cls, import_string
+from .utils import classname_of_cls, import_string, repr_of_typeform
 
 # Wait for PEP 747
 _TypeFormT = Any
@@ -137,6 +139,59 @@ class _ParseResult:
     warnings: list[_ParseWarningEntry] = field(default_factory=list)
 
 
+def _parse_dataclass(
+    T: type, type_args: tuple[_TypeFormT, ...], prefix: str
+) -> tuple[dict[str, _TypeFormT], dict[str, _TypeFormT], set[int]]:
+    type_params: tuple[_TypeFormT, ...] = getattr(T, "__parameters__", ())
+
+    # If type_args is empty, we fill it with Any
+    if len(type_args) == 0:
+        type_args = (Any,) * len(type_params)
+
+    if len(type_args) != len(type_params):
+        raise ConfifyTypeError(
+            f"Invalid type arguments for `{T}{list(type_params)}` at `{prefix}`; actual {len(type_args)}, expected {len(type_params)}"
+        )
+
+    type_dict = dict(zip(type_params, type_args))
+
+    optional_fields: dict[str, _TypeFormT] = {}
+    required_fields: dict[str, _TypeFormT] = {}
+    super_field_ids: set[int] = set()
+    bases = getattr(T, "__orig_bases__", T.__bases__)
+    for BaseT in bases[::-1]:
+        BaseT: type
+        Orig: Optional[type] = get_origin(BaseT)
+        args_ = get_args(BaseT)
+        if is_dataclass(BaseT):
+            base_required_fields, base_optional_fields, base_super_field_ids = _parse_dataclass(
+                BaseT,
+                (),
+                prefix,
+            )
+        elif Orig is not None and is_dataclass(Orig):
+            base_required_fields, base_optional_fields, base_super_field_ids = _parse_dataclass(
+                Orig,
+                tuple(type_dict.get(p, p) for p in args_),
+                prefix,
+            )
+        else:
+            continue
+        optional_fields.update(base_optional_fields)
+        required_fields.update(base_required_fields)
+        super_field_ids.update(base_super_field_ids)
+
+    for f in fields(T):
+        if id(f) in super_field_ids:
+            continue
+        if f.default == MISSING and f.default_factory == MISSING:
+            required_fields[f.name] = type_dict.get(f.type, f.type)
+        else:
+            optional_fields[f.name] = type_dict.get(f.type, f.type)
+        super_field_ids.add(id(f))
+    return required_fields, optional_fields, super_field_ids
+
+
 class Schema(ABC):
     annotation: _TypeFormT
 
@@ -148,6 +203,10 @@ class Schema(ABC):
         OgT = T
         if get_origin(T) is Annotated:
             T = get_args(T)[0]
+
+        Origin = get_origin(T)
+        args = get_args(T)
+
         if T == Any:
             return AnySchema(OgT)
         elif T == int:
@@ -162,16 +221,14 @@ class Schema(ABC):
             return NoneSchema(OgT)
         elif T == Path:
             return PathSchema(OgT)
-        elif T == list or get_origin(T) == list or T == Iterable or T == Sequence:
-            args = get_args(T)
+        elif T == list or Origin == list or Origin == CollectionsIterable or Origin == CollectionsSequence:
             if len(args) == 0:
                 return ListSchema(OgT, AnySchema(Any))
             elif len(args) == 1:
                 return ListSchema(OgT, Schema._from_typeform(args[0], f"{prefix}[0]"))
             else:
                 raise ConfifyTypeError(f"Invalid list type: `{T}` at `{prefix}`")
-        elif T == tuple or get_origin(T) == tuple:
-            args = get_args(T)
+        elif T == tuple or Origin == tuple:
             # Compatibility hack to distinguish between unparametrized and empty tuple
             # (tuple[()]), necessary due to https://github.com/python/cpython/issues/91137
             if len(args) == 0 and (T is tuple or T is Tuple):
@@ -182,7 +239,6 @@ class Schema(ABC):
             else:
                 return TupleSchema(OgT, [Schema._from_typeform(a, f"{prefix}.{i}") for i, a in enumerate(args)])
         elif T == dict or get_origin(T) == dict:
-            args = get_args(T)
             if len(args) == 0:
                 return MappingSchema(OgT, StrSchema(str), AnySchema(Any))
             elif len(args) == 2:
@@ -193,23 +249,12 @@ class Schema(ABC):
                 )
             else:
                 raise ConfifyTypeError(f"Invalid dict type: `{T}` at `{prefix}`")
-        elif get_origin(T) is Literal:
-            args = get_args(T)
+        elif Origin is Literal:
             return LiteralSchema(OgT, args)
-        elif get_origin(T) is Union:
-            args = get_args(T)
+        elif Origin is Union:
             return UnionSchema(OgT, [Schema._from_typeform(a, f"{prefix}.{i}") for i, a in enumerate(args)])
         elif isclass(T) and issubclass(T, Enum):
             return EnumSchema(OgT, T)
-        elif isclass(T) and is_dataclass(T):
-            optional_fields: dict[str, Schema] = {}
-            required_fields: dict[str, Schema] = {}
-            for f in fields(T):
-                if f.default == MISSING and f.default_factory == MISSING:
-                    required_fields[f.name] = Schema._from_typeform(f.type, f"{prefix}.{f.name}")
-                else:
-                    optional_fields[f.name] = Schema._from_typeform(f.type, f"{prefix}.{f.name}")
-            return DictSchema(OgT, required_fields, optional_fields, T)
         elif is_typeddict(T):
             optional_fields: dict[str, Schema] = {}
             required_fields: dict[str, Schema] = {}
@@ -221,7 +266,25 @@ class Schema(ABC):
                     required_fields[field] = Schema._from_typeform(typ, f"{prefix}.{field}")
                 else:
                     optional_fields[field] = Schema._from_typeform(typ, f"{prefix}.{field}")
-            return DictSchema(OgT, required_fields, optional_fields, T)
+            return DictSchema(OgT, required_fields, optional_fields, T, ())
+        elif isclass(T) and is_dataclass(T):
+            required_fields_, optional_fields_, _ = _parse_dataclass(T, (), prefix)
+            return DictSchema(
+                OgT,
+                {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in required_fields_.items()},
+                {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in optional_fields_.items()},
+                T,
+                (),
+            )
+        elif isclass(Origin) and is_dataclass(Origin):
+            required_fields_, optional_fields_, _ = _parse_dataclass(Origin, args, prefix)
+            return DictSchema(
+                OgT,
+                {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in required_fields_.items()},
+                {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in optional_fields_.items()},
+                T,
+                args,
+            )
         else:
             raise ConfifyTypeError(f"Unsupported type `{T}` at `{prefix}`")
 
@@ -534,15 +597,20 @@ class DictSchema(Schema):
         required_fields: dict[str, Schema],
         optional_fields: dict[str, Schema],
         BaseClass: Type,
+        type_args: tuple[_TypeFormT, ...],
     ):
         super().__init__(annotation)
         self.required_fields = required_fields
         self.optional_fields = optional_fields
         self.BaseClass = BaseClass
+        params = getattr(BaseClass, "__parameters__", ())
+        if len(type_args) == 0:
+            type_args = (Any,) * len(params)
+        self.type_args = type_args
 
     def _repr(self, indent: int = 0) -> str:
         indent_str = " " * indent
-        str_ = f"TypedDict[{classname_of_cls(self.BaseClass)}]\n"
+        str_ = f"TypedDict[{repr_of_typeform(self.annotation)}]\n"
         for k, v in self.required_fields.items():
             str_ += f"{indent_str}- {k}: {v._repr(indent + 2)}\n"
         for k, v in self.optional_fields.items():
