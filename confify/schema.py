@@ -301,6 +301,9 @@ class Schema(ABC):
     @abstractmethod
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult: ...
 
+    @abstractmethod
+    def equals(self, other: "Schema") -> bool: ...
+
     def parse(self, d: Any, options: Optional[ConfifyOptions] = None) -> Any:
         options = ConfifyOptions.get_default() if options is None else options
         res = self._parse(d, "<root>", options)
@@ -331,6 +334,9 @@ class StrSchema(Schema):
             return _ParseResult(d)
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, StrSchema)
+
 
 class IntSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -345,6 +351,9 @@ class IntSchema(Schema):
             except ValueError:
                 return self.raise_parse_error(d, prefix, f"Invalid integer: {d.value}")
         self.raise_parse_error(d, prefix)
+
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, IntSchema)
 
 
 class FloatSchema(Schema):
@@ -363,6 +372,9 @@ class FloatSchema(Schema):
                 return self.raise_parse_error(d, prefix, f"Invalid float: {d.value}")
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, FloatSchema)
+
 
 class BoolSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -379,6 +391,9 @@ class BoolSchema(Schema):
                 return _ParseResult(False)
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, BoolSchema)
+
 
 class NoneSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -392,6 +407,9 @@ class NoneSchema(Schema):
             if d in ["null", "~", "none"]:
                 return _ParseResult(None)
         self.raise_parse_error(d, prefix)
+
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, NoneSchema)
 
 
 # Value schemas
@@ -414,6 +432,9 @@ class PathSchema(Schema):
             return _ParseResult(Path(d.value))
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, PathSchema)
+
 
 class AnySchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -421,6 +442,9 @@ class AnySchema(Schema):
 
     def _parse(self, d: Any, prefix: str, options: ConfifyOptions) -> _ParseResult:
         return _ParseResult(UnresolvedString.sanitize(d))
+
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, AnySchema)
 
 
 class EnumSchema(Schema):
@@ -448,6 +472,9 @@ class EnumSchema(Schema):
         elif isinstance(d, self.EnumType):
             return _ParseResult(d)
         self.raise_parse_error(d, prefix)
+
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, EnumSchema) and self.EnumType == other.EnumType
 
 
 _TYPE_RANK = {
@@ -499,6 +526,9 @@ class LiteralSchema(Schema):
             return candidates[0]
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, LiteralSchema) and self.values == other.values
+
 
 class ListSchema(Schema):
     def __init__(self, annotation: _TypeFormT, val_schema: Schema):
@@ -522,6 +552,9 @@ class ListSchema(Schema):
 
         results = [self.val_schema._parse(e, f"{prefix}[{i}]", options) for i, e in enumerate(elems)]
         return _ParseResult([r.value for r in results], warnings=sum([r.warnings for r in results], []))
+
+    def equals(self, other: Schema) -> bool:
+        return isinstance(other, ListSchema) and self.val_schema.equals(other.val_schema)
 
 
 class TupleSchema(Schema):
@@ -563,6 +596,21 @@ class TupleSchema(Schema):
             results = [self.val_schemas._parse(e, f"{prefix}[{i}]", options) for i, e in enumerate(elems)]
         return _ParseResult(tuple(r.value for r in results), warnings=sum([r.warnings for r in results], []))
 
+    def equals(self, other: Schema) -> bool:
+        if not isinstance(other, TupleSchema):
+            return False
+        # Both must be the same type (either both Schema or both tuple of Schemas)
+        if isinstance(self.val_schemas, tuple) != isinstance(other.val_schemas, tuple):
+            return False
+        if isinstance(self.val_schemas, tuple) and isinstance(other.val_schemas, tuple):
+            # Fixed-length tuple case
+            if len(self.val_schemas) != len(other.val_schemas):
+                return False
+            return all(s.equals(o) for s, o in zip(self.val_schemas, other.val_schemas))
+        else:
+            # Variable-length tuple case (tuple[int, ...])
+            return self.val_schemas.equals(other.val_schemas)  # type: ignore
+
 
 class MappingSchema(Schema):
     def __init__(self, annotation: _TypeFormT, key_schema: Schema, val_schema: Schema):
@@ -588,6 +636,13 @@ class MappingSchema(Schema):
                 warnings=sum([r.warnings for kv in entries for r in kv], []),
             )
         self.raise_parse_error(d, prefix)
+
+    def equals(self, other: Schema) -> bool:
+        return (
+            isinstance(other, MappingSchema)
+            and self.key_schema.equals(other.key_schema)
+            and self.val_schema.equals(other.val_schema)
+        )
 
 
 class DictSchema(Schema):
@@ -685,6 +740,26 @@ class DictSchema(Schema):
             return _ParseResult(d)
         self.raise_parse_error(d, prefix)
 
+    def equals(self, other: Schema) -> bool:
+        if not isinstance(other, DictSchema):
+            return False
+        # Compare BaseClass and type_args
+        if self.BaseClass != other.BaseClass or self.type_args != other.type_args:
+            return False
+        # Compare required fields
+        if set(self.required_fields.keys()) != set(other.required_fields.keys()):
+            return False
+        for key in self.required_fields:
+            if not self.required_fields[key].equals(other.required_fields[key]):
+                return False
+        # Compare optional fields
+        if set(self.optional_fields.keys()) != set(other.optional_fields.keys()):
+            return False
+        for key in self.optional_fields:
+            if not self.optional_fields[key].equals(other.optional_fields[key]):
+                return False
+        return True
+
 
 class UnionSchema(Schema):
     def __init__(self, annotation: _TypeFormT, schemas: list[Schema]):
@@ -724,3 +799,10 @@ class UnionSchema(Schema):
         if len(candidates) >= 1:
             return candidates[0]
         self.raise_parse_error(d, prefix, "Cannot parse to any of the union types (see below for details):\n" + errors)
+
+    def equals(self, other: Schema) -> bool:
+        if not isinstance(other, UnionSchema):
+            return False
+        if len(self.schemas) != len(other.schemas):
+            return False
+        return all(s.equals(o) for s, o in zip(self.schemas, other.schemas))
