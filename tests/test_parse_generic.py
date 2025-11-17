@@ -3,7 +3,14 @@ from dataclasses import dataclass, field
 import pytest
 
 from confify.parser import _parse, ConfifyParseError, UnresolvedString
-from confify.schema import Schema
+from confify.schema import (
+    Schema,
+    DictSchema,
+    IntSchema,
+    StrSchema,
+    AnySchema,
+    ListSchema,
+)
 
 
 # Helper function from test_parse.py
@@ -89,71 +96,150 @@ class Mapping(Generic[T]):
 def test_schema_aa_parameterized():
     """Test AA[int] schema structure"""
     schema = Schema.from_typeform(AA[int])
-    expected = Schema.from_typeform(AA[int])
+    expected = DictSchema(
+        annotation=AA[int],
+        required_fields={"x1": IntSchema(int)},
+        optional_fields={},
+        BaseClass=AA[int],  # BaseClass is the parameterized type
+        type_args=(int,),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_aa_unparameterized():
     """Test AA without type parameters - should use Any"""
     schema = Schema.from_typeform(AA)
-    # Should have x1: Any
-    expected_schema = Schema.from_typeform(AA)
-    assert schema.equals(expected_schema)
+    # Should have x1: Any (type_args auto-filled with Any)
+    expected = DictSchema(
+        annotation=AA,
+        required_fields={"x1": AnySchema(Any)},
+        optional_fields={},
+        BaseClass=AA,
+        type_args=(Any,),
+    )
+    assert schema.equals(expected)
 
 
 def test_schema_bb_parameterized():
     """Test BB[str] schema structure"""
     schema = Schema.from_typeform(BB[str])
-    expected = Schema.from_typeform(BB[str])
+    # BB[str] inherits from AA[V] where V=str, so x1: str
+    # BB also has its own field x3: int
+    expected = DictSchema(
+        annotation=BB[str],
+        required_fields={"x1": StrSchema(str), "x3": IntSchema(int)},
+        optional_fields={},
+        BaseClass=BB[str],  # BaseClass is the parameterized type
+        type_args=(str,),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_bb_unparameterized():
     """Test BB without type parameters - should use Any"""
     schema = Schema.from_typeform(BB)
-    expected = Schema.from_typeform(BB)
+    # BB inherits from AA[V] where V=Any, and has x3: int
+    expected = DictSchema(
+        annotation=BB,
+        required_fields={"x1": AnySchema(Any), "x3": IntSchema(int)},
+        optional_fields={},
+        BaseClass=BB,
+        type_args=(Any,),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_a_parameterized():
     """Test A[int] schema structure"""
     schema = Schema.from_typeform(A[int])
-    expected = Schema.from_typeform(A[int])
+    expected = DictSchema(
+        annotation=A[int],
+        required_fields={"x": IntSchema(int)},
+        optional_fields={},
+        BaseClass=A[int],  # BaseClass is the parameterized type
+        type_args=(int,),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_b_two_params():
     """Test B[int, str] schema structure"""
     schema = Schema.from_typeform(B[int, str])
-    expected = Schema.from_typeform(B[int, str])
+    # B[int, str] inherits from A[U_TV] where U_TV=int, so x: int
+    # B has its own field y: T where T=str
+    expected = DictSchema(
+        annotation=B[int, str],
+        required_fields={"x": IntSchema(int), "y": StrSchema(str)},
+        optional_fields={},
+        BaseClass=B[int, str],  # BaseClass is the parameterized type
+        type_args=(int, str),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_b_nested_generic():
     """Test B[AA[int], str] with nested generic"""
     schema = Schema.from_typeform(B[AA[int], str])
-    expected = Schema.from_typeform(B[AA[int], str])
+    # B[AA[int], str] has x: AA[int] (nested DictSchema) and y: str
+    expected = DictSchema(
+        annotation=B[AA[int], str],
+        required_fields={
+            "x": DictSchema(
+                annotation=AA[int],
+                required_fields={"x1": IntSchema(int)},
+                optional_fields={},
+                BaseClass=AA[int],  # Nested BaseClass is also parameterized
+                type_args=(int,),
+            ),
+            "y": StrSchema(str),
+        },
+        optional_fields={},
+        BaseClass=B[AA[int], str],  # BaseClass is the parameterized type
+        type_args=(AA[int], str),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_c_field_override():
     """Test C[int, str] where child overrides parent field"""
     schema = Schema.from_typeform(C[int, str])
-    expected = Schema.from_typeform(C[int, str])
+    # C[int, str] inherits from A[U_TV] where U_TV=int, but overrides x with x: T where T=str
+    # So both x and y are str, not int
+    expected = DictSchema(
+        annotation=C[int, str],
+        required_fields={"x": StrSchema(str), "y": StrSchema(str)},
+        optional_fields={},
+        BaseClass=C[int, str],  # BaseClass is the parameterized type
+        type_args=(int, str),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_d_non_generic():
     """Test non-generic dataclass D"""
     schema = Schema.from_typeform(D)
-    expected = Schema.from_typeform(D)
+    # D is a simple non-generic dataclass with a: int and b: str
+    expected = DictSchema(
+        annotation=D,
+        required_fields={"a": IntSchema(int), "b": StrSchema(str)},
+        optional_fields={},
+        BaseClass=D,
+        type_args=(),
+    )
     assert schema.equals(expected)
 
 
 def test_schema_e_concrete_parent():
     """Test E inheriting from A[int]"""
     schema = Schema.from_typeform(E)
-    expected = Schema.from_typeform(E)
+    # E inherits from A[int], so x: int, and adds its own field c: str
+    expected = DictSchema(
+        annotation=E,
+        required_fields={"x": IntSchema(int), "c": StrSchema(str)},
+        optional_fields={},
+        BaseClass=E,
+        type_args=(),
+    )
     assert schema.equals(expected)
 
 
