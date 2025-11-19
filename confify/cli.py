@@ -85,13 +85,13 @@ class Set(Generic[T]):
         self.duck_typed = field
 
     @overload
-    def to(self: "Set[Path]", value: Union[Path, L]) -> SetRecord[Path]: ...
+    def to(self: "Set[Path]", value: Union[Path, L, str]) -> SetRecord[Path]: ...
     @overload
     def to(self, value: T) -> SetRecord[T]: ...
     def to(self, value):
         return SetRecord(self.duck_typed, value, from_yaml=False)
 
-    def from_yaml(self, path: Path) -> SetRecord[T]:
+    def from_yaml(self, path: Union[Path, L, str]) -> SetRecord[T]:
         return SetRecord(self.duck_typed, path, from_yaml=True)
 
 
@@ -299,15 +299,14 @@ def compile_to_args(
     for stmt in stmts:
         if isinstance(stmt, SetRecord):
             dotnotation = stmt.duck_typed.get_dotnotation()
+            value = stmt.value
+            if isinstance(value, L):
+                value = value.format(**lstr_kwargs)
             if stmt.from_yaml:
                 args.append(f"{options.yaml_prefix}{dotnotation}")
-                args.append(stmt.value)
+                args.append(value)
             else:
-                if isinstance(stmt.value, L):
-                    args.append(f"{options.prefix}{dotnotation}")
-                    args.append(stmt.value.format(**lstr_kwargs))
-                else:
-                    args.extend(_any_to_args(stmt.value, options=options, prefix=dotnotation))
+                args.extend(_any_to_args(value, options=options, prefix=dotnotation))
         elif isinstance(stmt, SetTypeRecord):
             args.extend(
                 [
