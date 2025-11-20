@@ -151,9 +151,7 @@ def _substitute_typevars(T: _TypeFormT, type_dict: dict[TypeVar, _TypeFormT]) ->
     return Origin[tuple(_substitute_typevars(a, type_dict) for a in args)]
 
 
-def _parse_dataclass(
-    T: type, type_args: tuple[_TypeFormT, ...], prefix: str
-) -> tuple[dict[str, _TypeFormT], dict[str, _TypeFormT], set[int]]:
+def _parse_dataclass_inner(T: type, type_args: tuple[_TypeFormT, ...], prefix: str) -> dict[int, _TypeFormT]:
     type_params: tuple[_TypeFormT, ...] = getattr(T, "__parameters__", ())
 
     # If type_args is empty, we fill it with Any
@@ -167,41 +165,50 @@ def _parse_dataclass(
 
     type_dict = dict(zip(type_params, type_args))
 
-    optional_fields: dict[str, _TypeFormT] = {}
-    required_fields: dict[str, _TypeFormT] = {}
-    super_field_ids: set[int] = set()
+    field_map: dict[int, _TypeFormT] = {}
     bases = getattr(T, "__orig_bases__", T.__bases__)
     for BaseT in bases[::-1]:
         BaseT: type
         Orig: Optional[type] = get_origin(BaseT)
         args_ = get_args(BaseT)
         if is_dataclass(BaseT):
-            base_required_fields, base_optional_fields, base_super_field_ids = _parse_dataclass(
+            field_map_ = _parse_dataclass_inner(
                 BaseT,
                 (),
                 prefix,
             )
         elif Orig is not None and is_dataclass(Orig):
-            base_required_fields, base_optional_fields, base_super_field_ids = _parse_dataclass(
+            field_map_ = _parse_dataclass_inner(
                 Orig,
                 tuple(type_dict.get(p, p) for p in args_),
                 prefix,
             )
         else:
             continue
-        optional_fields.update(base_optional_fields)
-        required_fields.update(base_required_fields)
-        super_field_ids.update(base_super_field_ids)
+        field_map.update(field_map_)
 
+    cur_field_map: dict[int, _TypeFormT] = {}
     for f in fields(T):
-        if id(f) in super_field_ids:
-            continue
-        if f.default == MISSING and f.default_factory == MISSING:
-            required_fields[f.name] = _substitute_typevars(f.type, type_dict)
+        id_ = id(f)
+        if id_ in field_map:
+            cur_field_map[id_] = field_map[id_]
         else:
-            optional_fields[f.name] = _substitute_typevars(f.type, type_dict)
-        super_field_ids.add(id(f))
-    return required_fields, optional_fields, super_field_ids
+            cur_field_map[id_] = _substitute_typevars(f.type, type_dict)
+    return cur_field_map
+
+
+def _parse_dataclass(
+    T: type, type_args: tuple[_TypeFormT, ...], prefix: str
+) -> tuple[dict[str, _TypeFormT], dict[str, _TypeFormT]]:
+    field_map = _parse_dataclass_inner(T, type_args, prefix)
+    required_fields: dict[str, _TypeFormT] = {}
+    optional_fields: dict[str, _TypeFormT] = {}
+    for f in fields(T):
+        if f.default == MISSING and f.default_factory == MISSING:
+            required_fields[f.name] = field_map[id(f)]
+        else:
+            optional_fields[f.name] = field_map[id(f)]
+    return required_fields, optional_fields
 
 
 class Schema(ABC):
@@ -280,7 +287,7 @@ class Schema(ABC):
                     optional_fields[field] = Schema._from_typeform(typ, f"{prefix}.{field}")
             return DictSchema(OgT, required_fields, optional_fields, T, ())
         elif isclass(T) and is_dataclass(T):
-            required_fields_, optional_fields_, _ = _parse_dataclass(T, (), prefix)
+            required_fields_, optional_fields_ = _parse_dataclass(T, (), prefix)
             return DictSchema(
                 OgT,
                 {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in required_fields_.items()},
@@ -289,7 +296,7 @@ class Schema(ABC):
                 (),
             )
         elif isclass(Origin) and is_dataclass(Origin):
-            required_fields_, optional_fields_, _ = _parse_dataclass(Origin, args, prefix)
+            required_fields_, optional_fields_ = _parse_dataclass(Origin, args, prefix)
             return DictSchema(
                 OgT,
                 {k: Schema._from_typeform(v, f"{prefix}.{k}") for k, v in required_fields_.items()},
