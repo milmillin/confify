@@ -26,6 +26,7 @@ import shlex
 from abc import abstractmethod, ABC
 import shutil
 from datetime import datetime
+import os
 
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
 from .schema import Schema, DictSchema, MappingSchema
@@ -447,7 +448,7 @@ class Confify(Generic[T]):
     # kwargs, fn
     exporter_fns: dict[str, ConfifyExporter] = {}
 
-    def __init__(self, Config: Type[T], options: Optional[ConfifyOptions] = None):
+    def __init__(self, Config: Type[T], options: Optional[ConfifyOptions] = None, cwd: Union[str, Path, None] = None):
         self.Config = Config
         self.options = options or ConfifyOptions.get_default()
         self.schema = Schema.from_typeform(Config)
@@ -455,6 +456,9 @@ class Confify(Generic[T]):
 
         # Add default exporter
         self.exporter_fns["shell"] = ShellExporter()
+
+        if cwd is not None:
+            os.chdir(cwd)
 
     def main(self):
         """
