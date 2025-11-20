@@ -71,7 +71,7 @@ class SetRecord(Generic[T]):
         self.duck_typed = duck_typed
         self.value = value
         self.from_yaml = from_yaml
-        if not isinstance(value, L):
+        if not isinstance(value, L) and not from_yaml:
             # TODO: pass options
             self.duck_typed._schema_.parse(value)
 
