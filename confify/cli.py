@@ -448,14 +448,20 @@ class Confify(Generic[T]):
     # kwargs, fn
     exporter_fns: dict[str, ConfifyExporter] = {}
 
-    def __init__(self, Config: Type[T], options: Optional[ConfifyOptions] = None, cwd: Union[str, Path, None] = None):
+    def __init__(
+        self,
+        Config: Type[T],
+        options: Optional[ConfifyOptions] = None,
+        cwd: Union[str, Path, None] = None,
+        exporters: dict[str, ConfifyExporter] = {"shell": ShellExporter()},
+    ):
         self.Config = Config
         self.options = options or ConfifyOptions.get_default()
         self.schema = Schema.from_typeform(Config)
         self.duck_typed = cast(T, ConfigDuckTyped(self.schema, []))
 
         # Add default exporter
-        self.exporter_fns["shell"] = ShellExporter()
+        self.exporter_fns = dict(exporters)
 
         if cwd is not None:
             os.chdir(cwd)
