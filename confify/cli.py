@@ -256,7 +256,9 @@ def compile_to_config(
 
 
 def _stringify_impl(v: Any, is_root: bool = True) -> str:
-    if isinstance(v, (str, Path)):
+    if v is None:
+        return "None"
+    elif isinstance(v, (str, Path)):
         s = json.dumps(str(v))
         if is_root:
             return s[1:-1]
@@ -275,7 +277,7 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
 
 
 def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
-    if isinstance(v, (str, Path, bool, int, float, Enum, list, tuple)):
+    if v is None or isinstance(v, (str, Path, bool, int, float, Enum, list, tuple)):
         return [f"{options.prefix}{prefix}", _stringify_impl(v)]
     elif isinstance(v, dict):
         res: list[str] = []
