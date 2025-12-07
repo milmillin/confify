@@ -338,6 +338,9 @@ class Schema(ABC):
             f"Invalid data for type `{self.annotation}` at `{prefix}`. Got `{repr(d)}`.\n-> {message}"
         )
 
+    @abstractmethod
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]: ...
+
 
 class StrSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -356,6 +359,9 @@ class StrSchema(Schema):
     def equals(self, other: Schema) -> bool:
         return isinstance(other, StrSchema)
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, str), [self])
+
 
 class IntSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -373,6 +379,9 @@ class IntSchema(Schema):
 
     def equals(self, other: Schema) -> bool:
         return isinstance(other, IntSchema)
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, int), [self])
 
 
 class FloatSchema(Schema):
@@ -394,6 +403,9 @@ class FloatSchema(Schema):
     def equals(self, other: Schema) -> bool:
         return isinstance(other, FloatSchema)
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, (float, int)), [self])
+
 
 class BoolSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -413,6 +425,9 @@ class BoolSchema(Schema):
     def equals(self, other: Schema) -> bool:
         return isinstance(other, BoolSchema)
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, bool), [self])
+
 
 class NoneSchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -429,6 +444,9 @@ class NoneSchema(Schema):
 
     def equals(self, other: Schema) -> bool:
         return isinstance(other, NoneSchema)
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (T is type(None) or T is None, [self])
 
 
 # Value schemas
@@ -454,6 +472,9 @@ class PathSchema(Schema):
     def equals(self, other: Schema) -> bool:
         return isinstance(other, PathSchema)
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, (Path, str)), [self])
+
 
 class AnySchema(Schema):
     def _repr(self, indent: int = 0) -> str:
@@ -464,6 +485,9 @@ class AnySchema(Schema):
 
     def equals(self, other: Schema) -> bool:
         return isinstance(other, AnySchema)
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (True, [self])
 
 
 class EnumSchema(Schema):
@@ -494,6 +518,9 @@ class EnumSchema(Schema):
 
     def equals(self, other: Schema) -> bool:
         return isinstance(other, EnumSchema) and self.EnumType == other.EnumType
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, self.EnumType), [self])
 
 
 _TYPE_RANK = {
@@ -548,6 +575,9 @@ class LiteralSchema(Schema):
     def equals(self, other: Schema) -> bool:
         return isinstance(other, LiteralSchema) and self.values == other.values
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (False, [self])
+
 
 class ListSchema(Schema):
     def __init__(self, annotation: _TypeFormT, val_schema: Schema):
@@ -574,6 +604,9 @@ class ListSchema(Schema):
 
     def equals(self, other: Schema) -> bool:
         return isinstance(other, ListSchema) and self.val_schema.equals(other.val_schema)
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, list), [self])
 
 
 class TupleSchema(Schema):
@@ -630,6 +663,9 @@ class TupleSchema(Schema):
             # Variable-length tuple case (tuple[int, ...])
             return self.val_schemas.equals(other.val_schemas)  # type: ignore
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, tuple), [self])
+
 
 class MappingSchema(Schema):
     def __init__(self, annotation: _TypeFormT, key_schema: Schema, val_schema: Schema):
@@ -662,6 +698,9 @@ class MappingSchema(Schema):
             and self.key_schema.equals(other.key_schema)
             and self.val_schema.equals(other.val_schema)
         )
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, dict), [self])
 
 
 class DictSchema(Schema):
@@ -779,6 +818,9 @@ class DictSchema(Schema):
                 return False
         return True
 
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        return (issubclass(T, self.BaseClass), [self])
+
 
 class UnionSchema(Schema):
     def __init__(self, annotation: _TypeFormT, schemas: list[Schema]):
@@ -825,3 +867,14 @@ class UnionSchema(Schema):
         if len(self.schemas) != len(other.schemas):
             return False
         return all(s.equals(o) for s, o in zip(self.schemas, other.schemas))
+
+    def assignable_from(self, T: Type) -> tuple[bool, list["Schema"]]:
+        work = False
+        considered: list[Schema] = []
+        for s in self.schemas:
+            assignable, candidates = s.assignable_from(T)
+            if assignable:
+                work = True
+                break
+            considered.extend(candidates)
+        return (work, considered)

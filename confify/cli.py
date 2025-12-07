@@ -29,9 +29,9 @@ from datetime import datetime
 import os
 
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
-from .schema import Schema, DictSchema, MappingSchema
+from .schema import Schema, DictSchema, MappingSchema, UnionSchema
 from .parser import read_yaml, UnresolvedString, parse
-from .utils import classname_of_cls, classname
+from .utils import classname_of_cls, classname, repr_of_typeform
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -137,11 +137,18 @@ class SetType(Generic[T]):
     def __call__(
         self, as_: Union[As[T], AsWithStatements[T]]
     ) -> Union[SetTypeRecord[T], SetTypeRecordWithStatements[T]]:
-        if not isinstance(self.duck_typed._schema_, (DictSchema)):
-            raise ConfifyBuilderError(f"Only dict type can be set to a type")
         to_type = as_.to_type
-        if not issubclass(to_type, self.duck_typed._schema_.BaseClass):
-            raise ConfifyBuilderError(f"`{to_type}` is not a subtype of `{self.duck_typed._schema_.BaseClass}`")
+        assignable, candidates = self.duck_typed._schema_.assignable_from(to_type)
+        if not assignable:
+            msg = "\n".join(
+                [
+                    f"  - Type `{repr_of_typeform(to_type)}` is not assignable to `{repr_of_typeform(c.annotation)}`."
+                    for c in candidates
+                ]
+            )
+            raise ConfifyBuilderError(
+                f"Cannot set type `{repr_of_typeform(self.duck_typed._schema_.annotation)}` to `{repr_of_typeform(to_type)}`\n{msg}"
+            )
         if isinstance(as_, As):
             return SetTypeRecord(self.duck_typed, to_type)
         elif isinstance(as_, AsWithStatements):
