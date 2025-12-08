@@ -124,7 +124,9 @@ class Set(Generic[T]):
         else:
             return SetRecord(self.duck_typed, value, from_yaml=False)
 
-    def from_yaml(self, path: Union[Path, L, str]) -> Union[SetRecord[T], SetVariable[T]]:
+    def from_yaml(
+        self, path: Union[Path, L, str, Variable[Path], Variable[str], Variable[L]]
+    ) -> Union[SetRecord[T], SetVariable[T]]:
         if isinstance(self.duck_typed, Variable):
             return SetVariable(self.duck_typed, path, from_yaml=True)
         else:
