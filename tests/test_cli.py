@@ -306,3 +306,121 @@ def test_variable_with_sweep():
     assert len(result_b) == 2
     assert result_b[0].value == 20  # type: ignore
     assert result_b[1].value == 20  # type: ignore
+
+
+# Variable-to-Variable Tests
+def test_variable_to_variable_assignment():
+    """Set(var1).to(var2) assigns var2's value to var1"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+    a = Variable(int)
+    b = Variable(int)
+
+    stmts = [
+        Set(a).to(10),
+        Set(b).to(a),  # b gets value from a
+        Set(duck.value).to(b),
+    ]
+
+    result = execute(stmts)
+
+    assert len(result) == 1
+    assert result[0].value == 10  # type: ignore
+
+
+def test_variable_chain():
+    """Chained variable assignments: a=10, b=a, c=b → c should be 10"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+    a = Variable(int)
+    b = Variable(int)
+    c = Variable(int)
+
+    stmts = [
+        Set(a).to(42),
+        Set(b).to(a),
+        Set(c).to(b),
+        Set(duck.value).to(c),
+    ]
+
+    result = execute(stmts)
+
+    assert len(result) == 1
+    assert result[0].value == 42  # type: ignore
+
+
+def test_variable_cycle_undefined_error():
+    """Cycle of length 2: Set(a).to(b), Set(b).to(a) → first fails (b not defined)"""
+    a = Variable(int)
+    b = Variable(int)
+
+    stmts = [
+        Set(a).to(b),  # b is not yet defined
+        Set(b).to(a),
+    ]
+
+    with pytest.raises(ConfifyCLIError, match="not defined"):
+        execute(stmts)
+
+
+def test_variable_self_reference_error():
+    """Self-reference: Set(a).to(a) → error (a not defined)"""
+    a = Variable(int)
+
+    stmts = [
+        Set(a).to(a),  # a references itself before being defined
+    ]
+
+    with pytest.raises(ConfifyCLIError, match="not defined"):
+        execute(stmts)
+
+
+def test_variable_larger_cycle_error():
+    """Cycle of length 3: Set(a).to(b), Set(b).to(c), Set(c).to(a) → first fails"""
+    a = Variable(int)
+    b = Variable(int)
+    c = Variable(int)
+
+    stmts = [
+        Set(a).to(b),  # b is not yet defined
+        Set(b).to(c),
+        Set(c).to(a),
+    ]
+
+    with pytest.raises(ConfifyCLIError, match="not defined"):
+        execute(stmts)
+
+
+def test_variable_override_from_variable():
+    """With allow_override: a=10, b=a, a=b → a gets updated from b's value"""
+
+    @dataclass
+    class Simple:
+        x: int
+        y: int
+
+    duck = create_duck_typed(Simple)
+    a = Variable(int, allow_override=True)
+    b = Variable(int)
+
+    stmts = [
+        Set(a).to(10),
+        Set(b).to(a),  # b = 10
+        Set(a).to(b),  # a = 10 (from b)
+        Set(duck.x).to(a),
+        Set(duck.y).to(b),
+    ]
+
+    result = execute(stmts)
+
+    assert len(result) == 2
+    assert result[0].value == 10  # type: ignore
+    assert result[1].value == 10  # type: ignore

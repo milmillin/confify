@@ -252,7 +252,14 @@ def execute(stmts: PureConfigStatements) -> SuperPureConfigStatements:
             vid = id(stmt.variable)
             if vid in variables and not stmt.variable.allow_override:
                 raise ConfifyCLIError(f"Variable `{stmt.variable}` is already defined.")
-            variables[id(stmt.variable)] = stmt.value
+            if isinstance(stmt.value, Variable):
+                vid_src = id(stmt.value)
+                if vid_src not in variables:
+                    raise ConfifyCLIError(f"Variable `{stmt.value}` is not defined.")
+                value = variables[vid_src]
+            else:
+                value = stmt.value
+            variables[id(stmt.variable)] = value
         elif isinstance(stmt, SetRecord):
             if isinstance(stmt.value, Variable):
                 vid = id(stmt.value)
