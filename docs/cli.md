@@ -19,7 +19,7 @@ The Confify CLI system provides a powerful framework for building command-line a
 The Confify CLI system consists of several key components:
 
 - **`Confify` class**: Orchestrates CLI workflow with decorators for main and generator functions
-- **DSL (Domain-Specific Language)**: Provides `Set`, `Sweep`, `SetType`, `As`, and `L` for building configurations
+- **DSL (Domain-Specific Language)**: Provides `Set`, `Sweep`, `SetType`, `As`, `L`, and `Variable` for building configurations
 - **Generators**: Functions that produce multiple configuration variants
 - **Exporters**: Convert generated configurations to various formats (shell scripts, JSON, etc.)
 - **CLI Commands**: Built-in commands for listing, generating, and running configurations
@@ -257,6 +257,82 @@ Sweep(
 # Generates: <base_name>, <base_name>_v2
 ```
 
+### Variable
+
+Define reusable values that can be referenced across multiple configuration fields. Variables are particularly useful when the same value needs to be used in different parts of a configuration, especially across sweep branches.
+
+```python
+from confify import Variable
+
+# Create a variable with a type hint
+dim = Variable(int)
+```
+
+**Setting Variable Values:**
+
+```python
+# Set the variable's value
+Set(dim).to(256)
+```
+
+**Using Variables in Fields:**
+
+```python
+# Reference the variable in field assignments
+Set(_.encoder.hidden_dim).to(dim)
+Set(_.decoder.hidden_dim).to(dim)
+```
+
+**With Sweeps:**
+
+Variables shine when combined with sweeps, allowing you to define a value once and use it consistently across related fields:
+
+```python
+@c.generator()
+def model_sweep(_: Config) -> ConfigStatements:
+    dim = Variable(int)
+    return [
+        Set(_.name).to(L("{name}")),
+        Sweep(
+            _small=[Set(dim).to(256)],
+            _large=[Set(dim).to(512)],
+        ),
+        SetType(_.encoder)(
+            As(Encoder).then(lambda e: [
+                Set(e.hidden_dim).to(dim),
+            ])
+        ),
+        SetType(_.decoder)(
+            As(Decoder).then(lambda e: [
+                Set(e.hidden_dim).to(dim),
+            ])
+        ),
+    ]
+# Both encoder and decoder get the same dim value in each sweep branch
+```
+
+**allow_override Option:**
+
+By default, a variable can only be set once. Use `allow_override=True` to allow reassignment:
+
+```python
+# Default: raises error if set twice
+dim = Variable(int)
+
+# Allow reassignment
+dim = Variable(int, allow_override=True)
+
+# Now you can override in nested sweeps
+[
+    Set(dim).to(128),  # Initial value
+    Sweep(
+        _default=[],  # Uses 128
+        _large=[Set(dim).to(512)],  # Overrides to 512
+    ),
+    Set(_.hidden_dim).to(dim),
+]
+```
+
 ### SetType
 
 Set polymorphic types using dataclass subclassing.
@@ -316,7 +392,7 @@ As(ConvEncoder).then(lambda e: [
 
 ```python
 from dataclasses import dataclass
-from confify import Confify, ConfigStatements, Set, Sweep, SetType, As, L
+from confify import Confify, ConfigStatements, Set, Sweep, SetType, As, L, Variable
 
 @dataclass
 class Optimizer:

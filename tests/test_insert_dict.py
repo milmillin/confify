@@ -1,6 +1,6 @@
 import pytest
 
-from confify.parser import _insert_dict
+from confify.cli import _insert_dict
 
 
 def test1():

@@ -69,8 +69,9 @@ class L(str): ...
 
 # Variable
 class Variable(Generic[T]):
-    def __init__(self, _T: Type[T]):
+    def __init__(self, _T: Type[T], allow_override: bool = False):
         self.T = _T
+        self.allow_override = allow_override
 
     def __repr__(self):
         return f"x{id(self)}[{self.T.__name__}]"
@@ -202,8 +203,8 @@ class Sweep:
             self.sweeps = dict(sweeps)
 
 
-SuperPureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any]]]
-PureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any], SetVariable[Any]]]
+SuperPureConfigStatements = Sequence[Union[SetRecord[Any], SetTypeRecord[Any]]]
+PureConfigStatements = Sequence[Union[SetRecord[Any], SetTypeRecord[Any], SetVariable[Any]]]
 ConfigStatements = Sequence[
     Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any], SetVariable[Any]]
 ]
@@ -249,7 +250,7 @@ def execute(stmts: PureConfigStatements) -> SuperPureConfigStatements:
     for stmt in stmts:
         if isinstance(stmt, SetVariable):
             vid = id(stmt.variable)
-            if vid in variables:
+            if vid in variables and not stmt.variable.allow_override:
                 raise ConfifyCLIError(f"Variable `{stmt.variable}` is already defined.")
             variables[id(stmt.variable)] = stmt.value
         elif isinstance(stmt, SetRecord):
