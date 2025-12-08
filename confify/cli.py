@@ -27,10 +27,11 @@ from abc import abstractmethod, ABC
 import shutil
 from datetime import datetime
 import os
+from inspect import isclass
 
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
 from .schema import Schema, DictSchema, MappingSchema, UnionSchema
-from .parser import read_yaml, UnresolvedString, parse
+from .parser import read_yaml, UnresolvedString, parse, config_dump
 from .utils import classname_of_cls, classname, repr_of_typeform
 
 T = TypeVar("T")
@@ -66,36 +67,67 @@ class ConfigDuckTyped:
 class L(str): ...
 
 
+# Variable
+class Variable(Generic[T]):
+    def __init__(self, _T: Type[T]):
+        self.T = _T
+
+    def __repr__(self):
+        return f"x{id(self)}[{self.T.__name__}]"
+
+
 class SetRecord(Generic[T]):
     def __init__(self, duck_typed: ConfigDuckTyped, value: Any, *, from_yaml: bool = False):
         self.duck_typed = duck_typed
         self.value = value
         self.from_yaml = from_yaml
-        if not isinstance(value, L) and not from_yaml:
-            # TODO: pass options
-            self.duck_typed._schema_.parse(value)
 
     def __repr__(self):
         return f"{self.duck_typed.get_dotnotation()} = {self.value}"
 
 
+class SetVariable(Generic[T]):
+    def __init__(self, variable: Variable[T], value: Any, *, from_yaml: bool = False):
+        self.variable = variable
+        self.value = value
+        self.from_yaml = from_yaml
+
+    def __repr__(self):
+        return f"{self.variable} = {self.value}"
+
+
 class Set(Generic[T]):
-    def __init__(self, field: T):
-        if not isinstance(field, ConfigDuckTyped):
+    @overload
+    def __init__(self, field: Variable[T]): ...
+    @overload
+    def __init__(self, field: T): ...
+
+    def __init__(self, field):
+        if not isinstance(field, (ConfigDuckTyped, Variable)):
             raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{type(field).__qualname__}`")
         self.duck_typed = field
 
     @overload
-    def to(self: "Set[Path]", value: Union[Path, L, str]) -> SetRecord[Path]: ...
+    def to(
+        self: "Set[Path]", value: Union[Path, L, str, Variable[Path], Variable[str], Variable[L]]
+    ) -> SetRecord[Path]: ...
     @overload
-    def to(self: "Set[Optional[Path]]", value: Union[Path, L, str, None]) -> SetRecord[Optional[Path]]: ...
+    def to(
+        self: "Set[Optional[Path]]", value: Union[Path, L, str, Variable[Path], Variable[str], Variable[L], None]
+    ) -> SetRecord[Optional[Path]]: ...
     @overload
-    def to(self, value: T) -> SetRecord[T]: ...
+    def to(self, value: Union[Variable[T], T]) -> SetRecord[T]: ...
     def to(self, value):
-        return SetRecord(self.duck_typed, value, from_yaml=False)
+        if isinstance(self.duck_typed, Variable):
+            return SetVariable(self.duck_typed, value, from_yaml=False)
+        else:
+            return SetRecord(self.duck_typed, value, from_yaml=False)
 
-    def from_yaml(self, path: Union[Path, L, str]) -> SetRecord[T]:
-        return SetRecord(self.duck_typed, path, from_yaml=True)
+    def from_yaml(self, path: Union[Path, L, str]) -> Union[SetRecord[T], SetVariable[T]]:
+        if isinstance(self.duck_typed, Variable):
+            return SetVariable(self.duck_typed, path, from_yaml=True)
+        else:
+            return SetRecord(self.duck_typed, path, from_yaml=True)
 
 
 class SetTypeRecordWithStatements(Generic[T]):
@@ -170,8 +202,11 @@ class Sweep:
             self.sweeps = dict(sweeps)
 
 
-PureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any]]]
-ConfigStatements = Sequence[Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any]]]
+SuperPureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any]]]
+PureConfigStatements = list[Union[SetRecord[Any], SetTypeRecord[Any], SetVariable[Any]]]
+ConfigStatements = Sequence[
+    Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any], SetVariable[Any]]
+]
 
 
 @dataclass
@@ -187,25 +222,50 @@ class NamedPureConfigStatements:
 NamedPureConfigStatements.empty = NamedPureConfigStatements("", [])
 
 
-def execute_sweep(sweep: Sweep) -> list[NamedPureConfigStatements]:
+def flatten_sweep(sweep: Sweep) -> list[NamedPureConfigStatements]:
     res: list[NamedPureConfigStatements] = []
     for key, stmts in sweep.sweeps.items():
-        res.extend(execute(stmts, base_name=key))
+        res.extend(flatten(stmts, base_name=key))
     return res
 
 
-def execute(stmts: ConfigStatements, base_name: str) -> Iterable[NamedPureConfigStatements]:
+def flatten(stmts: ConfigStatements, base_name: str) -> Iterable[NamedPureConfigStatements]:
     operands: list[list[NamedPureConfigStatements]] = [[NamedPureConfigStatements(base_name, [])]]
     for stmt in stmts:
         if isinstance(stmt, Sweep):
-            operands.append(execute_sweep(stmt))
+            operands.append(flatten_sweep(stmt))
         elif isinstance(stmt, SetTypeRecordWithStatements):
             operands.append([NamedPureConfigStatements("", [SetTypeRecord(stmt.duck_typed, stmt.to_type)])])
-            operands.append(list(execute(stmt.stmts, "")))
+            operands.append(list(flatten(stmt.stmts, "")))
         else:
             operands.append([NamedPureConfigStatements("", [stmt])])
     for x in itertools.product(*operands):
         yield sum(x, NamedPureConfigStatements.empty)
+
+
+def execute(stmts: PureConfigStatements) -> SuperPureConfigStatements:
+    variables: dict[int, Any] = {}
+    res: SuperPureConfigStatements = []
+    for stmt in stmts:
+        if isinstance(stmt, SetVariable):
+            vid = id(stmt.variable)
+            if vid in variables:
+                raise ConfifyCLIError(f"Variable `{stmt.variable}` is already defined.")
+            variables[id(stmt.variable)] = stmt.value
+        elif isinstance(stmt, SetRecord):
+            if isinstance(stmt.value, Variable):
+                vid = id(stmt.value)
+                if vid not in variables:
+                    raise ConfifyCLIError(f"Variable `{stmt.value}` is not defined.")
+                value = variables[id(stmt.value)]
+                res.append(SetRecord(stmt.duck_typed, value, from_yaml=stmt.from_yaml))
+            else:
+                res.append(stmt)
+        elif isinstance(stmt, SetTypeRecord):
+            res.append(stmt)
+        else:
+            raise ConfifyCLIError(f"Invalid statement: {stmt}")
+    return res
 
 
 # endregion
@@ -239,7 +299,7 @@ def create_lstr_kwargs(script_name: str = "", name: str = "", generator_name: st
 
 
 def compile_to_config(
-    stmts: PureConfigStatements,
+    stmts: SuperPureConfigStatements,
     schema: Schema,
     options: ConfifyOptions,
     lstr_kwargs: dict[str, str],
@@ -252,6 +312,8 @@ def compile_to_config(
             else:
                 if isinstance(stmt.value, L):
                     value = stmt.value.format(**lstr_kwargs)
+                elif is_dataclass(stmt.value) and not isclass(stmt.value):
+                    value = config_dump(stmt.value, options=options)
                 else:
                     value = stmt.value
             _insert_dict(res, stmt.duck_typed.prefixes, value)
@@ -302,7 +364,7 @@ def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]
 
 
 def compile_to_args(
-    stmts: PureConfigStatements,
+    stmts: SuperPureConfigStatements,
     options: ConfifyOptions,
     lstr_kwargs: dict[str, str],
     shell_escape: bool = True,
@@ -503,7 +565,7 @@ class Confify(Generic[T]):
             raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
         for generator_name in argv[1:]:
             prog = self.gen_fns[generator_name](self.duck_typed)
-            stmtss = execute(prog, base_name=generator_name)
+            stmtss = flatten(prog, base_name=generator_name)
             for stmts in stmtss:
                 print(stmts.name)
 
@@ -533,10 +595,11 @@ class Confify(Generic[T]):
         extra_kwargs = exporter.pre_run(lstr_kwargs)
         lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
         prog = generator(self.duck_typed)
-        stmtss = execute(prog, base_name=generator_name)
+        stmtss = flatten(prog, base_name=generator_name)
         for stmts in stmtss:
             lstr_kwargs["name"] = stmts.name
-            args = compile_to_args(stmts.stmts, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
+            stmts_ = execute(stmts.stmts)
+            args = compile_to_args(stmts_, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
             exporter.run(args, lstr_kwargs)
             cnt += 1
         exporter.post_run(lstr_kwargs)
@@ -555,7 +618,7 @@ class Confify(Generic[T]):
         for gen_name, gen_fn in self.gen_fns.items():
             if run_name.startswith(gen_name):
                 prog = gen_fn(self.duck_typed)
-                stmtss = execute(prog, base_name=gen_name)
+                stmtss = flatten(prog, base_name=gen_name)
                 for stmts in stmtss:
                     if stmts.name == run_name:
                         lstr_kwargs = create_lstr_kwargs(
@@ -563,7 +626,8 @@ class Confify(Generic[T]):
                             name=run_name,
                             generator_name=gen_name,
                         )
-                        config = compile_to_config(stmts.stmts, self.schema, self.options, lstr_kwargs)
+                        stmts_ = execute(stmts.stmts)
+                        config = compile_to_config(stmts_, self.schema, self.options, lstr_kwargs)
                         break
         if config is None:
             raise ConfifyCLIError(f"Config not found: {run_name}")
