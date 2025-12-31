@@ -544,8 +544,7 @@ class Confify(Generic[T]):
         # Add default exporter
         self.exporter_fns = dict(exporters)
 
-        if cwd is not None:
-            os.chdir(cwd)
+        self.cwd = cwd
 
     def main(self):
         """
@@ -562,6 +561,8 @@ class Confify(Generic[T]):
         """Handle main execution mode: parse config from CLI args and run main function."""
         if self.main_fn is None:
             raise ConfifyCLIError("Main function is not set.")
+        if self.cwd is not None:
+            os.chdir(self.cwd)
         config = read_config_from_argv(self.Config, argv, self.options, schema=self.schema)
         return self.main_fn(config)
 
@@ -622,6 +623,9 @@ class Confify(Generic[T]):
             raise ConfifyCLIError("Main function is not set.")
         if not len(argv) == 2:
             raise ConfifyCLIError("Invalid arguments. Expected `run <config-name>`")
+
+        if self.cwd is not None:
+            os.chdir(self.cwd)
 
         run_name = argv[1]
         config = None
