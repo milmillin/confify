@@ -13,10 +13,14 @@ def repr_of_typeform(cls: type) -> str:
 
     if Origin is not None:
         if len(args) == 0:
-            return Origin.__qualname__
+            return classname_of_cls(Origin)
         args_str = ", ".join(repr_of_typeform(a) for a in args)
-        return f"{Origin.__qualname__}[{args_str}]"
-    return cls.__qualname__
+        return f"{classname_of_cls(Origin)}[{args_str}]"
+    return classname_of_cls(cls)
+
+
+# alias to format typeforms
+FT = repr_of_typeform
 
 
 def classname_of_cls(cls: type) -> str:

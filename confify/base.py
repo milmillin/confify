@@ -1,5 +1,5 @@
-import warnings
 from dataclasses import dataclass
+import sys
 
 
 class ConfifyError(Exception):
@@ -11,10 +11,6 @@ class ConfifyParseError(ConfifyError):
 
 
 class ConfifyTypeError(ConfifyError):
-    pass
-
-
-class ConfifyWarning(UserWarning):
     pass
 
 
@@ -44,4 +40,4 @@ _default_options = ConfifyOptions()
 
 
 def _warning(msg: str) -> None:
-    warnings.warn(msg, ConfifyWarning)
+    print(f"ConfifyWarning: {msg}", file=sys.stderr)

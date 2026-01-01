@@ -25,7 +25,7 @@ from inspect import isclass
 import ast
 
 from .base import ConfifyTypeError, ConfifyOptions, _warning, ConfifyParseError, ConfifyBuilderError
-from .utils import classname_of_cls, import_string, repr_of_typeform
+from .utils import classname_of_cls, import_string, FT
 
 # Wait for PEP 747
 _TypeFormT = Any
@@ -558,14 +558,14 @@ class LiteralSchema(Schema):
         candidates.sort(key=lambda x: _TYPE_RANK.get(type(x.value), 0))
         non_str_candidates = [c for c in candidates if not isinstance(c.value, str)]
         if len(non_str_candidates) > 1:
-            options_ = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
+            options_ = ", ".join([f"{repr(c.value)}: {FT(type(c.value))}" for c in candidates])
             candidates[0].warnings.insert(
                 0,
                 _ParseWarningEntry(
                     loc=prefix,
                     type=self.annotation,
                     value=d,
-                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}`. Options are `{options_}`.",
+                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
                 ),
             )
         if len(candidates) >= 1:
@@ -723,7 +723,7 @@ class DictSchema(Schema):
 
     def _repr(self, indent: int = 0) -> str:
         indent_str = " " * indent
-        str_ = f"TypedDict[{repr_of_typeform(self.annotation)}]\n"
+        str_ = f"TypedDict[{FT(self.annotation)}]\n"
         for k, v in self.required_fields.items():
             str_ += f"{indent_str}- {k}: {v._repr(indent + 2)}\n"
         for k, v in self.optional_fields.items():
@@ -847,14 +847,14 @@ class UnionSchema(Schema):
         candidates.sort(key=lambda x: _TYPE_RANK.get(type(x.value), 0))
         non_str_candidates = [c for c in candidates if not isinstance(c.value, str)]
         if len(non_str_candidates) > 1:
-            options_ = ", ".join([f"{repr(c.value)}: {type(c.value).__qualname__}" for c in candidates])
+            options_ = ", ".join([f"{repr(c.value)}: {FT(type(c.value))}" for c in candidates])
             candidates[0].warnings.insert(
                 0,
                 _ParseWarningEntry(
                     loc=prefix,
                     type=f"{self.annotation}",
                     value=d,
-                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {type(candidates[0].value).__qualname__}`. Options are `{options_}`.",
+                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
                 ),
             )
         if len(candidates) >= 1:

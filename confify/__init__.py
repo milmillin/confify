@@ -1,6 +1,6 @@
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
-from .base import ConfifyParseError, ConfifyWarning, ConfifyOptions
+from .base import ConfifyParseError, ConfifyOptions
 from .parser import (
     parse,
     config_dump_yaml,
@@ -23,7 +23,6 @@ from .cli import (
 
 __all__ = [
     "ConfifyParseError",
-    "ConfifyWarning",
     "ConfifyOptions",
     "parse",
     "config_dump_yaml",

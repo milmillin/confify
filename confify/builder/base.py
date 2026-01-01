@@ -6,6 +6,7 @@ import json
 import shlex
 
 from ..base import ConfifyOptions
+from ..utils import FT
 
 
 class _ArgEntry(NamedTuple):
@@ -42,7 +43,7 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
     elif isinstance(v, tuple):
         return "(" + ", ".join([_stringify_impl(e, False) for e in v]) + ")"
     else:
-        raise ValueError(f"Unsupported type: {type(v)}")
+        raise ValueError(f"Unsupported type: {FT(type(v))}")
 
 
 def _stringify(v: Any) -> str:

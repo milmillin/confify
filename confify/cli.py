@@ -32,7 +32,7 @@ from inspect import isclass
 from .base import ConfifyOptions, ConfifyBuilderError, ConfifyError, _warning, ConfifyParseError
 from .schema import Schema, DictSchema, MappingSchema, UnionSchema
 from .parser import read_yaml, UnresolvedString, parse, config_dump
-from .utils import classname_of_cls, classname, repr_of_typeform
+from .utils import classname_of_cls, classname, FT
 
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
@@ -74,7 +74,7 @@ class Variable(Generic[T]):
         self.allow_override = allow_override
 
     def __repr__(self):
-        return f"x{id(self)}[{self.T.__name__}]"
+        return f"x{id(self)}[{FT(self.T)}]"
 
 
 class SetRecord(Generic[T]):
@@ -105,7 +105,7 @@ class Set(Generic[T]):
 
     def __init__(self, field):
         if not isinstance(field, (ConfigDuckTyped, Variable)):
-            raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{type(field).__qualname__}`")
+            raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{FT(type(field))}`")
         self.duck_typed = field
 
     @overload
@@ -146,7 +146,7 @@ class SetTypeRecord(Generic[T]):
         self.to_type = to_type
 
     def __repr__(self):
-        return f"{self.duck_typed.get_dotnotation()} = {self.to_type.__name__}"
+        return f"{self.duck_typed.get_dotnotation()} = {FT(self.to_type)}"
 
 
 class AsWithStatements(Generic[T_co]):
@@ -166,7 +166,7 @@ class As(Generic[T_co]):
 class SetType(Generic[T]):
     def __init__(self, field: T):
         if not isinstance(field, ConfigDuckTyped):
-            raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{type(field).__qualname__}`")
+            raise ConfifyBuilderError(f"Invalid syntax. Expected `ConfigDuckTyped`, got `{FT(type(field))}`")
         self.duck_typed = field
 
     def __call__(
@@ -176,13 +176,10 @@ class SetType(Generic[T]):
         assignable, candidates = self.duck_typed._schema_.assignable_from(to_type)
         if not assignable:
             msg = "\n".join(
-                [
-                    f"  - Type `{repr_of_typeform(to_type)}` is not assignable to `{repr_of_typeform(c.annotation)}`."
-                    for c in candidates
-                ]
+                [f"  - Type `{FT(to_type)}` is not assignable to `{FT(c.annotation)}`." for c in candidates]
             )
             raise ConfifyBuilderError(
-                f"Cannot set type `{repr_of_typeform(self.duck_typed._schema_.annotation)}` to `{repr_of_typeform(to_type)}`\n{msg}"
+                f"Cannot set type `{FT(self.duck_typed._schema_.annotation)}` to `{FT(to_type)}`\n{msg}"
             )
         if isinstance(as_, As):
             return SetTypeRecord(self.duck_typed, to_type)
@@ -194,9 +191,7 @@ class SetType(Generic[T]):
             stmts = as_.stmts_fn(to_type_duck_typed)
             return SetTypeRecordWithStatements(self.duck_typed, to_type, stmts)
         else:
-            raise ConfifyBuilderError(
-                f"Invalid syntax. Expected `As` or `AsWithStatements`, got `{type(as_).__qualname__}`"
-            )
+            raise ConfifyBuilderError(f"Invalid syntax. Expected `As` or `AsWithStatements`, got `{FT(type(as_))}`")
 
 
 class Sweep:
@@ -354,7 +349,7 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
     elif isinstance(v, tuple):
         return "(" + ", ".join([_stringify_impl(e) for e in v]) + ")"
     else:
-        raise ConfifyCLIError(f"Unsupported type for stringification: {type(v)}")
+        raise ConfifyCLIError(f"Unsupported type for stringification: {FT(type(v))}")
 
 
 def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
@@ -372,7 +367,7 @@ def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]
             res.extend(_any_to_args(getattr(v, f.name), options=options, prefix=f"{prefix}.{f.name}"))
         return res
     else:
-        raise ConfifyCLIError(f"Invalid type: {type(v)}")
+        raise ConfifyCLIError(f"Invalid type: {FT(type(v))}")
 
 
 def compile_to_args(
@@ -681,7 +676,7 @@ class Confify(Generic[T]):
             else:
                 return self._handle_help_command()
         except ConfifyError as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(f"ConfifyError: {e}", file=sys.stderr)
             sys.exit(1)
 
     def generator(self, name: Optional[str] = None):
