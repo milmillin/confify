@@ -187,7 +187,9 @@ class SetType(Generic[T]):
         if isinstance(as_, As):
             return SetTypeRecord(self.duck_typed, to_type)
         elif isinstance(as_, AsWithStatements):
-            to_type_duck_typed = ConfigDuckTyped(Schema.from_typeform(to_type), self.duck_typed.prefixes)
+            to_type_duck_typed = ConfigDuckTyped(
+                Schema._from_typeform(to_type, "<root>." + self.duck_typed.get_dotnotation()), self.duck_typed.prefixes
+            )
             to_type_duck_typed = cast(T, to_type_duck_typed)
             stmts = as_.stmts_fn(to_type_duck_typed)
             return SetTypeRecordWithStatements(self.duck_typed, to_type, stmts)
