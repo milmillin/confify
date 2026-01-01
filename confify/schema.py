@@ -753,7 +753,7 @@ class DictSchema(Schema):
                                 )
                             )
                     else:
-                        return Schema.from_typeform(new_cls)._parse(d, prefix, options)
+                        return Schema._from_typeform(new_cls, prefix)._parse(d, prefix, options)
                 d = dict(d)
                 del d[options.type_key]
 
