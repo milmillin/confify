@@ -160,7 +160,7 @@ def _parse_dataclass_inner(T: type, type_args: tuple[_TypeFormT, ...], prefix: s
 
     if len(type_args) != len(type_params):
         raise ConfifyTypeError(
-            f"Invalid type arguments for `{T}{list(type_params)}` at `{prefix}`; actual {len(type_args)}, expected {len(type_params)}"
+            f"Invalid type arguments for `{FT(T)}{list(type_params)}` at `{prefix}`; actual {len(type_args)}, expected {len(type_params)}"
         )
 
     type_dict = dict(zip(type_params, type_args))
@@ -246,7 +246,7 @@ class Schema(ABC):
             elif len(args) == 1:
                 return ListSchema(OgT, Schema._from_typeform(args[0], f"{prefix}[0]"))
             else:
-                raise ConfifyTypeError(f"Invalid list type: `{T}` at `{prefix}`")
+                raise ConfifyTypeError(f"Invalid list type: `{FT(T)}` at `{prefix}`")
         elif T == tuple or Origin == tuple:
             # Compatibility hack to distinguish between unparametrized and empty tuple
             # (tuple[()]), necessary due to https://github.com/python/cpython/issues/91137
@@ -267,7 +267,7 @@ class Schema(ABC):
                     Schema._from_typeform(args[1], f"{prefix}.$value"),
                 )
             else:
-                raise ConfifyTypeError(f"Invalid dict type: `{T}` at `{prefix}`")
+                raise ConfifyTypeError(f"Invalid dict type: `{FT(T)}` at `{prefix}`")
         elif Origin is Literal:
             return LiteralSchema(OgT, args)
         elif Origin is Union:
@@ -305,7 +305,7 @@ class Schema(ABC):
                 args,
             )
         else:
-            raise ConfifyTypeError(f"Unsupported type `{T}` at `{prefix}`")
+            raise ConfifyTypeError(f"Unsupported type `{FT(T)}` at `{prefix}`")
 
     @classmethod
     def from_typeform(cls, T: _TypeFormT) -> "Schema":
@@ -335,7 +335,7 @@ class Schema(ABC):
 
     def raise_parse_error(self, d: Any, prefix: str, message: str = "") -> Never:
         raise ConfifyParseError(
-            f"Invalid data for type `{self.annotation}` at `{prefix}`. Got `{repr(d)}`.\n-> {message}"
+            f"Invalid data for type `{FT(self.annotation)}` at `{prefix}`. Got `{repr(d)}`.\n-> {message}"
         )
 
     @abstractmethod
@@ -565,7 +565,7 @@ class LiteralSchema(Schema):
                     loc=prefix,
                     type=self.annotation,
                     value=d,
-                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
+                    message=f"Ambiguous input for type `{FT(self.annotation)}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
                 ),
             )
         if len(candidates) >= 1:
@@ -854,7 +854,7 @@ class UnionSchema(Schema):
                     loc=prefix,
                     type=f"{self.annotation}",
                     value=d,
-                    message=f"Ambiguous input for type `{self.annotation}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
+                    message=f"Ambiguous input for type `{FT(self.annotation)}` at `{prefix}`. Using `{repr(candidates[0].value)}: {FT(type(candidates[0].value))}`. Options are `{options_}`.",
                 ),
             )
         if len(candidates) >= 1:

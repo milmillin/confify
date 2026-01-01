@@ -55,7 +55,7 @@ class ConfigDuckTyped:
                 return ConfigDuckTyped(self._schema_.required_fields[name], self.prefixes + [name])
             elif name in self._schema_.optional_fields:
                 return ConfigDuckTyped(self._schema_.optional_fields[name], self.prefixes + [name])
-        raise ConfifyBuilderError(f"Cannot access field `{name}` in `{self._schema_.annotation}`")
+        raise ConfifyBuilderError(f"Cannot access field `{name}` in `{FT(self._schema_.annotation)}`")
 
 
 # endregion
