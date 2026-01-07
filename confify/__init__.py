@@ -1,4 +1,4 @@
-__version__ = "0.0.9"
+__version__ = "0.0.10"
 
 from .base import ConfifyParseError, ConfifyOptions
 from .parser import (
@@ -13,6 +13,7 @@ from .cli import (
     read_config_from_cli,
     Confify,
     ConfigStatements,
+    ConfifyExporter,
     Set,
     Sweep,
     SetType,
@@ -33,6 +34,7 @@ __all__ = [
     "read_yaml",
     "Confify",
     "ConfigStatements",
+    "ConfifyExporter",
     "Set",
     "Sweep",
     "SetType",

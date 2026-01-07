@@ -24,7 +24,6 @@ class ConfifyOptions:
     yaml_prefix: str = "---"
     type_key: str = "$type"
     ignore_extra_fields: bool = False
-    strict_subclass_check: bool = False
 
     @classmethod
     def get_default(cls) -> "ConfifyOptions":

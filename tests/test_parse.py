@@ -672,6 +672,33 @@ def test_union():
         _parse(True, Union[int, str])
 
 
+def test_union_syntactic_sugar():
+    for t in [
+        int | str | bool | None,
+        int | str | bool | None,  # equivalent to Optional[Union[int, str, bool]]
+        int | None | str | bool,  # equivalent to Union[Optional[int], str, bool]
+    ]:
+        assert _parse(123, t) == 123
+        assert _parseu("123", t) == 123
+        assert _parseu('"123"', t) == "123"
+        assert _parse(-5, t) == -5
+
+        _assert_bool_equals(_parse(True, t), True)
+        _assert_bool_equals(_parse(False, t), False)
+        _assert_bool_equals(_parseu("True", t), True)
+        _assert_bool_equals(_parseu("False", t), False)
+        assert _parseu('"True"', t) == "True"
+        assert _parseu('"False"', t) == "False"
+
+    with pytest.raises(ConfifyParseError):
+        _parse({"a": 1, "b": 2}, int | str)
+    with pytest.raises(ConfifyParseError):
+        _parse(123.456, int | str)
+    assert _parseu("123.456", int | str) == "123.456"
+    with pytest.raises(ConfifyParseError):
+        _parse(True, int | str)
+
+
 ################################################################################
 # Test Enum
 ################################################################################

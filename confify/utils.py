@@ -1,9 +1,13 @@
-from typing import Any, Type, TypeVar, get_args, get_origin, Annotated
+from typing import Any, Type, TypeVar, get_args, get_origin, Annotated, Union, Literal
 import sys
 from importlib import import_module
+from inspect import isclass
 
 
-def repr_of_typeform(cls: type) -> str:
+def repr_of_typeform(cls: Union[type, None]) -> str:
+    if cls is None:
+        # Python is cursed
+        return "NoneType"
     Origin = get_origin(cls)
     args = get_args(cls)
     if Origin is Annotated:
@@ -11,10 +15,12 @@ def repr_of_typeform(cls: type) -> str:
         Origin = get_origin(x)
         args = get_args(x)
 
-    if Origin is not None:
+    if Origin is Literal:
+        return f"Literal[{', '.join(repr(a) for a in args)}]"
+    elif Origin is not None:
         if len(args) == 0:
             return classname_of_cls(Origin)
-        args_str = ", ".join(repr_of_typeform(a) for a in args)
+        args_str = ", ".join("..." if a is Ellipsis else repr_of_typeform(a) for a in args)
         return f"{classname_of_cls(Origin)}[{args_str}]"
     return classname_of_cls(cls)
 

@@ -17,6 +17,7 @@ from typing import (
     Tuple,
     TypeVar,
 )
+from types import UnionType
 from collections.abc import Iterable as CollectionsIterable, Sequence as CollectionsSequence
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -148,6 +149,8 @@ def _substitute_typevars(T: _TypeFormT, type_dict: dict[TypeVar, _TypeFormT]) ->
     args = get_args(T)
     if len(args) == 0:
         return Origin
+    if Origin == UnionType:
+        return Union[tuple(_substitute_typevars(a, type_dict) for a in args)]
     return Origin[tuple(_substitute_typevars(a, type_dict) for a in args)]
 
 
@@ -270,7 +273,7 @@ class Schema(ABC):
                 raise ConfifyTypeError(f"Invalid dict type: `{FT(T)}` at `{prefix}`")
         elif Origin is Literal:
             return LiteralSchema(OgT, args)
-        elif Origin is Union:
+        elif Origin is Union or Origin is UnionType:
             return UnionSchema(OgT, [Schema._from_typeform(a, f"{prefix}.{i}") for i, a in enumerate(args)])
         elif isclass(T) and issubclass(T, Enum):
             return EnumSchema(OgT, T)
@@ -737,23 +740,12 @@ class DictSchema(Schema):
                 new_cls = import_string(str(d[options.type_key]))
                 if new_cls != self.BaseClass:
                     if not issubclass(new_cls, self.BaseClass):
-                        if options.strict_subclass_check:
-                            self.raise_parse_error(
-                                d,
-                                prefix,
-                                f"Type `{classname_of_cls(new_cls)}` is not a subtype of `{classname_of_cls(self.BaseClass)}`",
-                            )
-                        else:
-                            warns.append(
-                                _ParseWarningEntry(
-                                    loc=f"{prefix}",
-                                    type=self.annotation,
-                                    value=d,
-                                    message=f"Type `{classname_of_cls(new_cls)}` is not a subtype of `{classname_of_cls(self.BaseClass)}`. Using `{classname_of_cls(new_cls)}`.",
-                                )
-                            )
-                    else:
-                        return Schema._from_typeform(new_cls, prefix)._parse(d, prefix, options)
+                        self.raise_parse_error(
+                            d,
+                            prefix,
+                            f"Type `{classname_of_cls(new_cls)}` is not a subtype of `{classname_of_cls(self.BaseClass)}`",
+                        )
+                    return Schema._from_typeform(new_cls, prefix)._parse(d, prefix, options)
                 d = dict(d)
                 del d[options.type_key]
 

@@ -527,7 +527,7 @@ def test_schema_repr_contains_type_params():
     """Test that schema representation includes type parameters"""
     schema = Schema.from_typeform(AA[int])
     repr_str = schema._repr()
-    assert "AA[int]" in repr_str or "AA" in repr_str
+    assert "AA[int]" in repr_str
 
 
 def test_schema_repr_nested_generics():
@@ -535,4 +535,4 @@ def test_schema_repr_nested_generics():
     schema = Schema.from_typeform(B[AA[int], str])
     repr_str = schema._repr()
     # Should show nested structure
-    assert "AA" in repr_str or "B" in repr_str
+    assert f"{B.__module__}.B[{AA.__module__}.AA[int], str]" in repr_str
