@@ -310,6 +310,7 @@ def compile_to_config(
     schema: Schema,
     options: ConfifyOptions,
     lstr_kwargs: dict[str, str],
+    argv: list[str],
 ) -> Any:
     res: dict[str, Any] = {}
     for stmt in stmts:
@@ -328,6 +329,24 @@ def compile_to_config(
             _insert_dict(res, stmt.duck_typed.prefixes + [options.type_key], classname_of_cls(stmt.to_type))
         else:
             raise ConfifyCLIError(f"Invalid statement: {stmt}")
+
+    i = 0
+    while i < len(argv):
+        if i + 1 >= len(argv):
+            raise ConfifyCLIError(f"Missing value for argument: {argv[i]}.")
+        key = argv[i]
+        value = argv[i + 1]
+        if key.startswith(options.yaml_prefix):
+            key = key[len(options.yaml_prefix) :]
+            value = read_yaml(value)
+        elif key.startswith(options.prefix):
+            key = key[len(options.prefix) :]
+            value = UnresolvedString(value)
+        else:
+            raise ConfifyCLIError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
+        _insert_dict(res, key.split(".") if key else [], value)
+        i += 2
+
     return schema.parse(res, options)
 
 
@@ -352,19 +371,21 @@ def _stringify_impl(v: Any, is_root: bool = True) -> str:
         raise ConfifyCLIError(f"Unsupported type for stringification: {FT(type(v))}")
 
 
-def _any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
+def any_to_args(v: Any, options: ConfifyOptions, prefix: str = "") -> list[str]:
     if v is None or isinstance(v, (str, Path, bool, int, float, Enum, list, tuple)):
         return [f"{options.prefix}{prefix}", _stringify_impl(v)]
     elif isinstance(v, dict):
         res: list[str] = []
+        prefix_dot = prefix + "." if prefix != "" else ""
         for k, v in v.items():
-            res.extend(_any_to_args(v, options, f"{prefix}.{k}"))
+            res.extend(any_to_args(v, options, f"{prefix_dot}{k}"))
         return res
     elif is_dataclass(v):
         res: list[str] = []
-        res.extend([f"{options.prefix}{prefix}.{options.type_key}", classname(v)])
+        prefix_dot = prefix + "." if prefix != "" else ""
+        res.extend([f"{options.prefix}{prefix_dot}{options.type_key}", classname(v)])
         for f in fields(v):
-            res.extend(_any_to_args(getattr(v, f.name), options=options, prefix=f"{prefix}.{f.name}"))
+            res.extend(any_to_args(getattr(v, f.name), options=options, prefix=f"{prefix_dot}{f.name}"))
         return res
     else:
         raise ConfifyCLIError(f"Invalid type: {FT(type(v))}")
@@ -387,7 +408,7 @@ def compile_to_args(
                 args.append(f"{options.yaml_prefix}{dotnotation}")
                 args.append(value)
             else:
-                args.extend(_any_to_args(value, options=options, prefix=dotnotation))
+                args.extend(any_to_args(value, options=options, prefix=dotnotation))
         elif isinstance(stmt, SetTypeRecord):
             args.extend(
                 [
@@ -618,13 +639,14 @@ class Confify(Generic[T]):
         """Handle run command: run a named configuration directly."""
         if self.main_fn is None:
             raise ConfifyCLIError("Main function is not set.")
-        if not len(argv) == 2:
+        if len(argv) < 2:
             raise ConfifyCLIError("Invalid arguments. Expected `run <config-name>`")
 
         if self.cwd is not None:
             os.chdir(self.cwd)
 
         run_name = argv[1]
+        additional_args = argv[2:]
         config = None
         for gen_name, gen_fn in self.gen_fns.items():
             if run_name.startswith(gen_name):
@@ -638,7 +660,7 @@ class Confify(Generic[T]):
                             generator_name=gen_name,
                         )
                         stmts_ = execute(stmts.stmts)
-                        config = compile_to_config(stmts_, self.schema, self.options, lstr_kwargs)
+                        config = compile_to_config(stmts_, self.schema, self.options, lstr_kwargs, additional_args)
                         break
         if config is None:
             raise ConfifyCLIError(f"Config not found: {run_name}")
@@ -647,10 +669,18 @@ class Confify(Generic[T]):
     def _handle_help_command(self):
         """Handle help command: display usage information."""
         print("Usage:")
-        print(f"  python {sys.argv[0]} [--<key> <value>]...           Run main with config from CLI args")
-        print(f"  python {sys.argv[0]} list [<generator>]...         List configurations")
-        print(f"  python {sys.argv[0]} gen <exporter> <generator>    Generate configuration files")
-        print(f"  python {sys.argv[0]} run <config-name>             Run a named configuration")
+        print(f"  python {sys.argv[0]} [--<key> <value>]...                     Run main with config from CLI args")
+        print(f"  python {sys.argv[0]} list [<generator>]...                    List configurations")
+        print(f"  python {sys.argv[0]} gen <exporter> <generator>               Generate configuration files")
+        print(f"  python {sys.argv[0]} run <config-name> [--<key> <value>]...   Run a named configuration")
+
+        print("\nAvailable <generator>:")
+        for gen_name in self.gen_fns:
+            print(f"  {gen_name}")
+
+        print("\nAvailable <exporter>:")
+        for exporter_name in self.exporter_fns:
+            print(f"  {exporter_name}")
 
     def main_wrapper(self):
         """Main entry point with centralized error handling and command dispatching."""
