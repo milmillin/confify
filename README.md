@@ -14,10 +14,8 @@ Confify is a fully typed, plug-and-play configuration library for Python.
 
 ## Installation
 
-(TODO) Upload to PyPI
-
 ```bash
-pip install git+https://github.com/milmillin/confify.git
+pip install confify
 ```
 
 ## Usage
