@@ -140,14 +140,12 @@ from confify import ConfifyOptions, parse, read_config_from_cli
 # Method 1: Pass options to individual functions
 options = ConfifyOptions(
     ignore_extra_fields=True,
-    strict_subclass_check=True
 )
 config = parse(data, MyConfig, options=options)
 
 # Method 2: Set global defaults for all subsequent calls
 ConfifyOptions.set_default(ConfifyOptions(
     ignore_extra_fields=True,
-    strict_subclass_check=False
 ))
 config = read_config_from_cli(MyConfig)  # Uses global defaults
 ```
@@ -164,10 +162,6 @@ config = read_config_from_cli(MyConfig)  # Uses global defaults
 
   - `False`: Raises an error if extra fields are found (strict validation)
   - `True`: Issues a warning and ignores extra fields (lenient validation)
-
-- **`strict_subclass_check`** (default: `False`): Controls validation when using `type_key` to specify a different class:
-  - `False`: Issues a warning if the specified class is not a subclass, but continues parsing
-  - `True`: Raises an error if the specified class is not a proper subclass
 
 ### Type Resolution
 
@@ -263,15 +257,11 @@ Confify supports polymorphic types through the `type_key` field (default: `"$typ
 1. When parsing a dictionary into a dataclass or TypedDict, confify checks for the `type_key` field
 2. If present, the value must be a fully qualified class name (e.g., `"my.module.MyClass"`)
 3. The specified class is dynamically loaded and used instead of the annotated type
-4. The behavior depends on the `strict_subclass_check` option:
-   - **`strict_subclass_check=False`** (default): If the specified class is not a subclass, issues a warning but continues
-   - **`strict_subclass_check=True`**: If the specified class is not a subclass, raises an error
-
 **Example:**
 
 ```python
 from dataclasses import dataclass
-from confify import read_config_from_cli, ConfifyOptions
+from confify import read_config_from_cli
 
 @dataclass
 class BaseEncoder:
@@ -291,9 +281,7 @@ class Config:
 #   depth: 6
 #   num_heads: 8
 
-# With strict checking enabled
-options = ConfifyOptions(strict_subclass_check=True)
-config = read_config_from_cli(Config, options=options)
+config = read_config_from_cli(Config)
 # Now config.encoder is a TransformerEncoder instance
 ```
 
@@ -435,6 +423,9 @@ python train.py list experiments
 # Generate shell scripts for each config
 python train.py generate shell experiments
 # Creates: _generated/train_experiments/experiments_bs32_sgd.sh, etc.
+
+# Generate shell scripts from all generators at once
+python train.py gen_all shell
 
 # Run a specific config directly
 python train.py run experiments_bs32_sgd

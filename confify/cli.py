@@ -600,13 +600,49 @@ class Confify(Generic[T]):
 
     def _handle_generate_command(self, argv: list[str]):
         """Handle generate command: generate configuration files using an exporter."""
-        if len(argv) != 3:
-            raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name>`")
+        if len(argv) < 3:
+            raise ConfifyCLIError("Invalid arguments. Expected `gen <exporter-name> <generator-name>...`")
 
-        generator_name = argv[2]
-        if generator_name not in self.gen_fns:
-            raise ConfifyCLIError(f"Generator not found: {generator_name}")
-        generator = self.gen_fns[generator_name]
+        exporter_name = argv[1]
+        if exporter_name not in self.exporter_fns:
+            raise ConfifyCLIError(f"Exporter not found: {exporter_name}")
+        exporter = self.exporter_fns[exporter_name]
+
+        generator_names = argv[2:]
+        not_found = [name for name in generator_names if name not in self.gen_fns]
+        if not_found:
+            raise ConfifyCLIError(f"Generator not found: {', '.join(not_found)}")
+
+        shell_escape = exporter.config.shell_escape
+
+        total_cnt = 0
+        for generator_name in generator_names:
+            generator = self.gen_fns[generator_name]
+            lstr_kwargs = create_lstr_kwargs(
+                script_name=Path(sys.argv[0]).stem,
+                name="",
+                generator_name=generator_name,
+            )
+            cnt = 0
+            extra_kwargs = exporter.pre_run(lstr_kwargs)
+            lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
+            prog = generator(self.duck_typed)
+            stmtss = flatten(prog, base_name=generator_name)
+            for stmts in stmtss:
+                lstr_kwargs["name"] = stmts.name
+                stmts_ = execute(stmts.stmts)
+                args = compile_to_args(stmts_, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
+                exporter.run(args, lstr_kwargs)
+                cnt += 1
+            exporter.post_run(lstr_kwargs)
+            total_cnt += cnt
+
+        print(f"\nExported {total_cnt} configs.")
+
+    def _handle_generate_all_command(self, argv: list[str]):
+        """Handle generate_all command: generate configuration files from all generators using an exporter."""
+        if len(argv) != 2:
+            raise ConfifyCLIError("Invalid arguments. Expected `gen_all <exporter-name>`")
 
         exporter_name = argv[1]
         if exporter_name not in self.exporter_fns:
@@ -615,25 +651,28 @@ class Confify(Generic[T]):
 
         shell_escape = exporter.config.shell_escape
 
-        lstr_kwargs = create_lstr_kwargs(
-            script_name=Path(sys.argv[0]).stem,
-            name="",
-            generator_name=generator_name,
-        )
-        cnt = 0
-        extra_kwargs = exporter.pre_run(lstr_kwargs)
-        lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
-        prog = generator(self.duck_typed)
-        stmtss = flatten(prog, base_name=generator_name)
-        for stmts in stmtss:
-            lstr_kwargs["name"] = stmts.name
-            stmts_ = execute(stmts.stmts)
-            args = compile_to_args(stmts_, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
-            exporter.run(args, lstr_kwargs)
-            cnt += 1
-        exporter.post_run(lstr_kwargs)
+        total_cnt = 0
+        for generator_name, generator in self.gen_fns.items():
+            lstr_kwargs = create_lstr_kwargs(
+                script_name=Path(sys.argv[0]).stem,
+                name="",
+                generator_name=generator_name,
+            )
+            cnt = 0
+            extra_kwargs = exporter.pre_run(lstr_kwargs)
+            lstr_kwargs = {**lstr_kwargs, **extra_kwargs}
+            prog = generator(self.duck_typed)
+            stmtss = flatten(prog, base_name=generator_name)
+            for stmts in stmtss:
+                lstr_kwargs["name"] = stmts.name
+                stmts_ = execute(stmts.stmts)
+                args = compile_to_args(stmts_, self.options, shell_escape=shell_escape, lstr_kwargs=lstr_kwargs)
+                exporter.run(args, lstr_kwargs)
+                cnt += 1
+            exporter.post_run(lstr_kwargs)
+            total_cnt += cnt
 
-        print(f"\nExported {cnt} configs.")
+        print(f"\nExported {total_cnt} configs from {len(self.gen_fns)} generators.")
 
     def _handle_run_command(self, argv: list[str]):
         """Handle run command: run a named configuration directly."""
@@ -671,7 +710,8 @@ class Confify(Generic[T]):
         print("Usage:")
         print(f"  python {sys.argv[0]} [--<key> <value>]...                     Run main with config from CLI args")
         print(f"  python {sys.argv[0]} list [<generator>]...                    List configurations")
-        print(f"  python {sys.argv[0]} gen <exporter> <generator>               Generate configuration files")
+        print(f"  python {sys.argv[0]} gen <exporter> <generator>...            Generate configuration files")
+        print(f"  python {sys.argv[0]} gen_all <exporter>                       Generate from all generators")
         print(f"  python {sys.argv[0]} run <config-name> [--<key> <value>]...   Run a named configuration")
 
         print("\nAvailable <generator>:")
@@ -699,6 +739,8 @@ class Confify(Generic[T]):
                 return self._handle_main_execution(argv)
             elif argv[0] in ["l", "ls", "list"]:
                 return self._handle_list_command(argv)
+            elif argv[0] in ["ga", "genall", "gen_all", "generate_all"]:
+                return self._handle_generate_all_command(argv)
             elif argv[0] in ["g", "gen", "generate"]:
                 return self._handle_generate_command(argv)
             elif argv[0] in ["r", "run"]:

@@ -636,11 +636,14 @@ exp2_config2
 
 ### generate / gen / g
 
-Generate configuration files using an exporter.
+Generate configuration files using an exporter. Accepts one or more generator names.
 
 ```bash
 # Generate shell scripts for all configs in a generator
 python script.py generate shell experiments
+
+# Generate from multiple generators
+python script.py generate shell exp1 exp2
 ```
 
 The `shell` exporter creates executable bash scripts in `_generated/{script}_{generator_name}/` directory:
@@ -662,6 +665,17 @@ python train.py \
     --batch_size 32 \
     --model_name resnet50
 ```
+
+### generate_all / gen_all / genall / ga
+
+Generate configuration files from **all** registered generators at once using an exporter.
+
+```bash
+# Generate shell scripts from all generators
+python script.py gen_all shell
+```
+
+This iterates over every registered generator and exports all their configurations, printing the total count at the end.
 
 ### run / r
 
