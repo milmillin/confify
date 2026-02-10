@@ -51,3 +51,4 @@ arg_test.py
 .pytest_cache/
 
 examples/_generated/
+_generated/
