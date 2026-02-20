@@ -1,6 +1,7 @@
 from dataclasses import dataclass, fields, is_dataclass
 from typing import (
     TypeVar,
+    TypeVarTuple,
     Type,
     Generic,
     Callable,
@@ -37,6 +38,12 @@ from .utils import classname_of_cls, classname, FT
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+T3 = TypeVar("T3")
+T4 = TypeVar("T4")
+T5 = TypeVar("T5")
+T6 = TypeVar("T6")
+Ts = TypeVarTuple("Ts")
 
 # region ConfigDuckTyped
 
@@ -68,13 +75,69 @@ class L(str): ...
 
 
 # Variable
-class Variable(Generic[T]):
-    def __init__(self, _T: Type[T], allow_override: bool = False):
+
+
+class IExpression(ABC, Generic[T_co]):
+    @abstractmethod
+    def evaluate(self, variables: dict[int, Any]) -> T_co: ...
+
+    @abstractmethod
+    def requires(self) -> tuple["Variable", ...]: ...
+
+
+class Variable(IExpression[T_co]):
+    def __init__(self, _T: Type[T_co], allow_override: bool = False):
         self.T = _T
         self.allow_override = allow_override
 
     def __repr__(self):
         return f"x{id(self)}[{FT(self.T)}]"
+
+    def evaluate(self, variables: dict[int, Any]) -> T_co:
+        return variables[id(self)]
+
+    def requires(self) -> tuple["Variable", ...]:
+        return (self,)
+
+
+class Expression(IExpression[T_co]):
+    def __init__(self, variables: tuple[Variable, ...], func: Callable[..., T_co]):
+        self.variables = variables
+        self.func = func
+
+    def evaluate(self, variables: dict[int, Any]) -> T_co:
+        return self.func(*[v.evaluate(variables) for v in self.variables])
+
+    def requires(self) -> tuple["Variable", ...]:
+        return self.variables
+
+
+class _Use(Generic[*Ts]):
+    def __init__(self, *variables: Variable):
+        self.variables = variables
+
+    def __call__(self, func: Callable[[*Ts], T]) -> Expression[T]:
+        return Expression(self.variables, func)
+
+
+@overload
+def Use(v1: Variable[T1], /) -> _Use[T1]: ...
+@overload
+def Use(v1: Variable[T1], v2: Variable[T2], /) -> _Use[T1, T2]: ...
+@overload
+def Use(v1: Variable[T1], v2: Variable[T2], v3: Variable[T3], /) -> _Use[T1, T2, T3]: ...
+@overload
+def Use(v1: Variable[T1], v2: Variable[T2], v3: Variable[T3], v4: Variable[T4], /) -> _Use[T1, T2, T3, T4]: ...
+@overload
+def Use(
+    v1: Variable[T1], v2: Variable[T2], v3: Variable[T3], v4: Variable[T4], v5: Variable[T5], /
+) -> _Use[T1, T2, T3, T4, T5]: ...
+@overload
+def Use(
+    v1: Variable[T1], v2: Variable[T2], v3: Variable[T3], v4: Variable[T4], v5: Variable[T5], v6: Variable[T6], /
+) -> _Use[T1, T2, T3, T4, T5, T6]: ...
+def Use(*variables):
+    return _Use(*variables)
 
 
 class SetRecord(Generic[T]):
@@ -110,14 +173,15 @@ class Set(Generic[T]):
 
     @overload
     def to(
-        self: "Set[Path]", value: Union[Path, L, str, Variable[Path], Variable[str], Variable[L]]
+        self: "Set[Path]", value: Union[Path, L, str, IExpression[Path], IExpression[str], IExpression[L]]
     ) -> SetRecord[Path]: ...
     @overload
     def to(
-        self: "Set[Optional[Path]]", value: Union[Path, L, str, Variable[Path], Variable[str], Variable[L], None]
+        self: "Set[Optional[Path]]",
+        value: Union[Path, L, str, IExpression[Path], IExpression[str], IExpression[L], None],
     ) -> SetRecord[Optional[Path]]: ...
     @overload
-    def to(self, value: Union[Variable[T], T]) -> SetRecord[T]: ...
+    def to(self, value: Union[IExpression[T], T]) -> SetRecord[T]: ...
     def to(self, value):
         if isinstance(self.duck_typed, Variable):
             return SetVariable(self.duck_typed, value, from_yaml=False)
@@ -205,7 +269,7 @@ class Sweep:
 SuperPureConfigStatements = Sequence[Union[SetRecord[Any], SetTypeRecord[Any]]]
 PureConfigStatements = Sequence[Union[SetRecord[Any], SetTypeRecord[Any], SetVariable[Any]]]
 ConfigStatements = Sequence[
-    Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any], SetVariable[Any]]
+    Union[SetRecord[Any], Sweep, SetTypeRecord[Any], SetTypeRecordWithStatements[Any], SetVariable[Any], None]
 ]
 
 
@@ -237,6 +301,8 @@ def flatten(stmts: ConfigStatements, base_name: str) -> Iterable[NamedPureConfig
         elif isinstance(stmt, SetTypeRecordWithStatements):
             operands.append([NamedPureConfigStatements("", [SetTypeRecord(stmt.duck_typed, stmt.to_type)])])
             operands.append(list(flatten(stmt.stmts, "")))
+        elif stmt is None:
+            pass
         else:
             operands.append([NamedPureConfigStatements("", [stmt])])
     for x in itertools.product(*operands):
@@ -251,20 +317,20 @@ def execute(stmts: PureConfigStatements) -> SuperPureConfigStatements:
             vid = id(stmt.variable)
             if vid in variables and not stmt.variable.allow_override:
                 raise ConfifyCLIError(f"Variable `{stmt.variable}` is already defined.")
-            if isinstance(stmt.value, Variable):
-                vid_src = id(stmt.value)
-                if vid_src not in variables:
-                    raise ConfifyCLIError(f"Variable `{stmt.value}` is not defined.")
-                value = variables[vid_src]
+            if isinstance(stmt.value, IExpression):
+                missing_vars = [v for v in stmt.value.requires() if id(v) not in variables]
+                if len(missing_vars) > 0:
+                    raise ConfifyCLIError(f"Variables {missing_vars} is not defined.")
+                value = stmt.value.evaluate(variables)
             else:
                 value = stmt.value
             variables[id(stmt.variable)] = value
         elif isinstance(stmt, SetRecord):
-            if isinstance(stmt.value, Variable):
-                vid = id(stmt.value)
-                if vid not in variables:
-                    raise ConfifyCLIError(f"Variable `{stmt.value}` is not defined.")
-                value = variables[id(stmt.value)]
+            if isinstance(stmt.value, IExpression):
+                missing_vars = [v for v in stmt.value.requires() if id(v) not in variables]
+                if len(missing_vars) > 0:
+                    raise ConfifyCLIError(f"Variables {missing_vars} is not defined.")
+                value = stmt.value.evaluate(variables)
                 res.append(SetRecord(stmt.duck_typed, value, from_yaml=stmt.from_yaml))
             else:
                 res.append(stmt)
