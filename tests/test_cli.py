@@ -15,6 +15,8 @@ from confify.cli import (
     flatten,
     Sweep,
     ConfifyCLIError,
+    Use,
+    Expression,
 )
 from confify.schema import Schema
 from confify.base import ConfifyBuilderError
@@ -424,3 +426,151 @@ def test_variable_override_from_variable():
     assert len(result) == 2
     assert result[0].value == 10  # type: ignore
     assert result[1].value == 10  # type: ignore
+
+
+# Expression / Use Tests
+
+
+def test_use_single_variable_expression():
+    """Use(v)(lambda x: x * 2) evaluates correctly"""
+    v = Variable(int)
+    expr = Use(v)(lambda x: x * 2)
+
+    assert isinstance(expr, Expression)
+    result = expr.evaluate({id(v): 5})
+    assert result == 10
+
+
+def test_use_multi_variable_expression():
+    """Use(v1, v2)(lambda a, b: a + b) evaluates correctly"""
+    v1 = Variable(int)
+    v2 = Variable(int)
+    expr = Use(v1, v2)(lambda a, b: a + b)
+
+    assert isinstance(expr, Expression)
+    result = expr.evaluate({id(v1): 3, id(v2): 7})
+    assert result == 10
+
+
+def test_use_expression_in_set_field():
+    """Set(field).to(Use(v)(func)) resolves in execute()"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+    v = Variable(int)
+
+    stmts = [
+        SetVariable(v, 5),
+        Set(duck.value).to(Use(v)(lambda x: x * 3)),
+    ]
+
+    result = execute(stmts)
+
+    assert len(result) == 1
+    assert result[0].value == 15  # type: ignore
+
+
+def test_use_expression_in_set_variable():
+    """Set(v2).to(Use(v1)(func)) resolves in execute()"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+    v1 = Variable(int)
+    v2 = Variable(int)
+
+    stmts = [
+        SetVariable(v1, 10),
+        Set(v2).to(Use(v1)(lambda x: x + 5)),
+        Set(duck.value).to(v2),
+    ]
+
+    result = execute(stmts)
+
+    assert len(result) == 1
+    assert result[0].value == 15  # type: ignore
+
+
+def test_use_expression_with_sweep():
+    """Expression produces correct values across sweep branches"""
+
+    @dataclass
+    class Config:
+        x: int
+
+    duck = create_duck_typed(Config)
+    v = Variable(int)
+
+    stmts = [
+        Sweep(
+            a=[Set(v).to(10)],
+            b=[Set(v).to(20)],
+        ),
+        Set(duck.x).to(Use(v)(lambda x: x * 2)),
+    ]
+
+    flattened = list(flatten(stmts, "test"))
+    assert len(flattened) == 2
+
+    result_a = execute(flattened[0].stmts)
+    assert result_a[0].value == 20  # type: ignore
+
+    result_b = execute(flattened[1].stmts)
+    assert result_b[0].value == 40  # type: ignore
+
+
+def test_use_expression_undefined_variable_error():
+    """Error when expression references undefined variable"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+    v = Variable(int)
+
+    stmts = [
+        Set(duck.value).to(Use(v)(lambda x: x * 2)),
+    ]
+
+    with pytest.raises(ConfifyCLIError, match="not defined"):
+        execute(stmts)
+
+
+def test_use_expression_multiple_requires():
+    """Expression.requires() returns all referenced variables"""
+    v1 = Variable(int)
+    v2 = Variable(str)
+    v3 = Variable(float)
+
+    expr = Use(v1, v2, v3)(lambda a, b, c: str(a) + b + str(c))
+
+    assert expr.requires() == (v1, v2, v3)
+
+
+def test_none_in_config_statements():
+    """None entries are silently skipped in flatten()"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    duck = create_duck_typed(Simple)
+
+    stmts = [
+        None,
+        Set(duck.value).to(42),
+        None,
+    ]
+
+    flattened = list(flatten(stmts, "test"))
+    assert len(flattened) == 1
+
+    result = execute(flattened[0].stmts)
+    assert len(result) == 1
+    assert result[0].value == 42  # type: ignore

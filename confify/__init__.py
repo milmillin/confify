@@ -1,4 +1,4 @@
-__version__ = "0.0.13"
+__version__ = "0.0.14"
 
 from .base import ConfifyParseError, ConfifyOptions
 from .parser import (
@@ -20,6 +20,7 @@ from .cli import (
     As,
     L,
     Variable,
+    Use,
 )
 
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     "As",
     "L",
     "Variable",
+    "Use",
 ]

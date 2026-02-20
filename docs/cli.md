@@ -333,6 +333,73 @@ dim = Variable(int, allow_override=True)
 ]
 ```
 
+### Use (Computed Expressions)
+
+Create computed values derived from one or more variables using `Use`. This is useful when a field's value should be calculated from other variables rather than set directly.
+
+**Basic Syntax:**
+
+```python
+from confify import Use, Variable
+
+dim = Variable(int)
+
+# Single-variable expression
+Set(_.hidden_dim).to(Use(dim)(lambda d: d * 2))
+```
+
+**Multi-Variable Expressions:**
+
+```python
+width = Variable(int)
+height = Variable(int)
+
+# Compute area from width and height
+Set(_.area).to(Use(width, height)(lambda w, h: w * h))
+```
+
+**With Sweeps:**
+
+Expressions are evaluated after variables are resolved, so they work naturally with sweeps:
+
+```python
+@c.generator()
+def model_sweep(_: Config) -> ConfigStatements:
+    dim = Variable(int)
+    return [
+        Sweep(
+            _small=[Set(dim).to(32)],
+            _large=[Set(dim).to(64)],
+        ),
+        # doubled_dim will be 64 for _small, 128 for _large
+        Set(_.doubled_dim).to(Use(dim)(lambda d: d * 2)),
+    ]
+```
+
+**Assigning Expressions to Variables:**
+
+You can also assign an expression result to another variable:
+
+```python
+dim = Variable(int)
+doubled = Variable(int)
+
+Set(dim).to(32)
+Set(doubled).to(Use(dim)(lambda d: d * 2))
+Set(_.hidden_dim).to(doubled)  # 64
+```
+
+**Type Safety:**
+
+`Use` supports up to 6 variables with full type inference. The lambda parameters match the types of the variables passed to `Use`:
+
+```python
+a = Variable(int)
+b = Variable(float)
+# Type checker knows x: int, y: float, result: float
+Set(_.result).to(Use(a, b)(lambda x, y: x * y))
+```
+
 ### SetType
 
 Set polymorphic types using dataclass subclassing.
