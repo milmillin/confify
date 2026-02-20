@@ -2,6 +2,7 @@
   "include": [
     "confify",
     "examples",
+    "static_tests",
     "tests",
     "*.py"
   ],
