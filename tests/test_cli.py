@@ -17,9 +17,10 @@ from confify.cli import (
     ConfifyCLIError,
     Use,
     Expression,
+    read_config_from_argv,
 )
 from confify.schema import Schema
-from confify.base import ConfifyBuilderError
+from confify.base import ConfifyBuilderError, ConfifyOptions, ConfifyParseError
 
 T1 = TypeVar("T1")
 
@@ -574,3 +575,26 @@ def test_none_in_config_statements():
     result = execute(flattened[0].stmts)
     assert len(result) == 1
     assert result[0].value == 42  # type: ignore
+
+
+def test_read_config_from_argv_uses_options():
+    """Options passed explicitly must reach the parser, not just the prefix handling"""
+
+    @dataclass
+    class Simple:
+        value: int
+
+    argv = ["--value", "1", "--extra", "2"]
+    with pytest.raises(ConfifyParseError):
+        read_config_from_argv(Simple, argv)
+
+    config = read_config_from_argv(Simple, argv, options=ConfifyOptions(ignore_extra_fields=True))
+    assert config == Simple(value=1)
+
+
+def test_read_config_from_argv_one_element_tuple():
+    @dataclass
+    class Simple:
+        t: tuple[int]
+
+    assert read_config_from_argv(Simple, ["--t", "(1,)"]) == Simple(t=(1,))

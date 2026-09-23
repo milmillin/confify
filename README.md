@@ -120,7 +120,7 @@ encoder:
   ch_mult: [3, 4]
   activation_fn: silu
   augment_type: mixup
-save_path: ~/experiments/exp1
+save_path: /home/user/experiments/exp1
 run_id: exp1
 ```
 
@@ -458,6 +458,8 @@ The `examples/` directory contains several examples demonstrating different Conf
 2. Default values defined in nested dataclass default constructor will be overwritten by the CLI arguments. For example:
 
 ```python
+from dataclasses import dataclass, field
+
 @dataclass
 class A:
     v1: int = 1

@@ -600,7 +600,7 @@ def read_config_from_argv(
             raise ConfifyCLIError(f"Invalid argument: {key}. Must start with {options.prefix} or {options.yaml_prefix}")
         _insert_dict(args, key.split(".") if key else [], value)
         i += 2
-    return parse(args, Config, schema=schema)
+    return parse(args, Config, options=options, schema=schema)
 
 
 def read_config_from_cli(Config: Type[T], options: Optional[ConfifyOptions] = None) -> T:

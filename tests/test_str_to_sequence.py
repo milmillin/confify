@@ -28,6 +28,17 @@ def test():
     assert _str_to_sequence("( ( ) )") == ["( )"]
 
 
+def test_trailing_comma():
+    assert _str_to_sequence("(1,)") == ["1"]
+    assert _str_to_sequence("[1,]") == ["1"]
+    assert _str_to_sequence("(1, 2,)") == ["1", "2"]
+    assert _str_to_sequence("(1, 2, )") == ["1", "2"]
+    assert _str_to_sequence("((1, 2),)") == ["(1, 2)"]
+    assert _str_to_sequence("('a,',)") == ["'a,'"]
+    # Only a single trailing comma after a non-empty element is dropped
+    assert _str_to_sequence("(1,,)") == ["1", "", ""]
+
+
 def test_quotes():
     assert _str_to_sequence('["a", "b", "c"]') == ['"a"', '"b"', '"c"']
     assert _str_to_sequence('["a]", "b[a, b, c]", "c"]') == [

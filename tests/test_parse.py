@@ -470,6 +470,17 @@ def test_typed_tuple_from_str():
     )
 
 
+def test_typed_tuple_trailing_comma():
+    for t in [tuple[int], Tuple[int]]:
+        assert _parseu("(1,)", t) == (1,)
+    for t in [tuple[int, ...], Tuple[int, ...]]:
+        assert _parseu("(1,)", t) == (1,)
+        assert _parseu("(1, 2,)", t) == (1, 2)
+        with pytest.raises(ConfifyParseError):
+            _parseu("(1,,)", t)
+    assert _parseu("[1,]", list[int]) == [1]
+
+
 def test_empty_tuple():
     for t in [tuple[()], Tuple[()]]:
         assert _parse([], t) == ()
@@ -1068,9 +1079,9 @@ def test_any_ambiguous_values():
 
 
 def test_any_trailing_comma():
-    """Test Any with trailing comma produces empty string."""
-    assert _parseu("(1,)", Any) == (1, "")
-    assert _parseu("(abc,)", Any) == ("abc", "")
+    """Test Any with a trailing comma follows Python tuple syntax."""
+    assert _parseu("(1,)", Any) == (1,)
+    assert _parseu("(abc,)", Any) == ("abc",)
 
 
 ################################################################################
@@ -1110,9 +1121,9 @@ def test_untyped_tuple_mixed_inference():
 
 
 def test_untyped_tuple_trailing_comma():
-    """Test unparameterized tuple with trailing comma produces empty string."""
-    assert _parseu("(1,)", tuple) == (1, "")
-    assert _parseu("(abc,)", tuple) == ("abc", "")
+    """Test unparameterized tuple with a trailing comma follows Python tuple syntax."""
+    assert _parseu("(1,)", tuple) == (1,)
+    assert _parseu("(abc,)", tuple) == ("abc",)
 
 
 def test_untyped_tuple_single_element():

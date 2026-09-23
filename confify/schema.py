@@ -109,6 +109,9 @@ class UnresolvedString:
         res.append(last.strip())
         if len(res) == 1 and res[0] == "":
             return []
+        # Allow a single trailing comma after a non-empty element, e.g. `(1,)`
+        if len(res) >= 2 and res[-1] == "" and res[-2] != "":
+            res.pop()
         return [UnresolvedString(r) for r in res]
 
     @classmethod
