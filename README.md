@@ -26,6 +26,8 @@ pip install confify
 # example.py
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, Optional, reveal_type
 from confify import Confify, config_dump_yaml
 
 @dataclass
@@ -46,9 +48,9 @@ c = Confify(Config)
 @c.main()
 def main(config: Config):
     # config is properly typed
-    assert reveal_type(config) == Config
+    reveal_type(config)  # Config
     # dumping config to yaml
-    config_dump_yaml("config.yaml", config)
+    config_dump_yaml(config, "config.yaml")
 
 if __name__ == "__main__":
     main()
@@ -82,7 +84,7 @@ Suppose you have the following `encoder.yaml`:
 depth: 6
 ch_mult: [3, 4]
 activation_fn: silu
-augment_type: None
+augment_type: null
 ```
 
 You can use a triple dash `---` prefix to load from the YAML file.
@@ -182,7 +184,7 @@ There may be ambiguity when the type is `Optional`, `Union` or `Literal`. For ex
 5. `float`
 6. `str`
 
-So `null` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to explicitly surround it with quotes (e.g., `python example.py '"null"'`).
+So `null` for type `Union[str, None]` will be parsed as `None`. To get a string `"null"`, the user needs to explicitly surround it with quotes (e.g., `python example.py --run_id '"null"'`).
 
 #### Handling `Any` Type
 
@@ -446,6 +448,8 @@ The `examples/` directory contains several examples demonstrating different Conf
 - **`ex_generator.py`** - Configuration generators with polymorphic types
 - **`ex_sweep_patterns.py`** - Different sweep patterns for hyperparameter searches
 - **`ex_ml_config.py`** - Realistic ML training configuration example
+- **`ex_variables.py`** - Sharing values across fields with `Variable`
+- **`ex_expressions.py`** - Computed values from variables with `Use`
 
 ## Limitations and Known Issues
 

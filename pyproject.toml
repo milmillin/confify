@@ -44,5 +44,8 @@ version = {attr = "confify.__version__"}
 [tool.setuptools.packages.find]
 include = ["confify*"]
 
+[tool.setuptools.package-data]
+confify = ["py.typed"]
+
 [tool.black]
 line-length = 120

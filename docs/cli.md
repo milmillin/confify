@@ -57,7 +57,7 @@ Run your script:
 python train.py --learning_rate 0.001 --batch_size 32 --model_name resnet50
 
 # Run with YAML config
-python train.py ---config.yaml
+python train.py --- config.yaml
 ```
 
 ## Main Function Usage
@@ -242,7 +242,7 @@ Sweep(
         _adam=[Set(_.optimizer).to("adam")],
     ),
 ]
-# Generates: resnet_small_sgd, resnet_small_adam, resnet_large_sgd, resnet_large_adam
+# Generates: <base_name>_small_sgd, <base_name>_small_adam, <base_name>_large_sgd, <base_name>_large_adam
 ```
 
 **Anonymous Sweep:**
@@ -713,7 +713,7 @@ python script.py generate shell experiments
 python script.py generate shell exp1 exp2
 ```
 
-The `shell` exporter creates executable bash scripts in `_generated/{script}_{generator_name}/` directory:
+The `shell` exporter creates executable bash scripts in `_generated/{script_name}_{generator_name}/` directory:
 
 ```bash
 _generated/
