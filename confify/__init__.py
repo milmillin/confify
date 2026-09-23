@@ -1,4 +1,4 @@
-__version__ = "0.0.15"
+__version__ = "0.0.16"
 
 from .base import ConfifyParseError, ConfifyOptions
 from .parser import (
